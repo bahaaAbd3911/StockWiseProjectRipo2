@@ -69,3 +69,17 @@ func (s *OrderService) CancelOrder(
 
 	return s.Repository.CancelOrder(userID, orderID)
 }
+func (s *OrderService) UpdateOrderStatus(orderID int64, status string) error {
+	if orderID <= 0 {
+		return errors.New("invalid order ID")
+	}
+
+	switch status {
+	case "confirmed", "processing", "shipped", "delivered":
+		// Valid administrator status.
+	default:
+		return errors.New("invalid order status")
+	}
+
+	return s.Repository.UpdateOrderStatus(orderID, status)
+}
