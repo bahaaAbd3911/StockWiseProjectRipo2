@@ -43,3 +43,6 @@ type OrderItem struct {
 type CreateOrderRequest struct {
 	AddressID int64 `json:"address_id"`
 }
+type UpdateOrderStatusRequest struct {
+	Status string `json:"status"`
+}

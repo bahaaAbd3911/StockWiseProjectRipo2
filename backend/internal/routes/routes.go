@@ -15,7 +15,7 @@ func RegisterRoutes(db *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Health check
-	mux.HandleFunc("GET /", handlers.HealthCheck)
+	mux.HandleFunc("GET /{$}", handlers.HealthCheck)
 
 	// Products
 	productRepository := repository.NewProductRepository(db)
@@ -153,6 +153,14 @@ func RegisterRoutes(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/orders/{id}/cancel", middleware.AuthMiddleware(db,
 		http.HandlerFunc(orderHandler.CancelOrder),
 	))
+
+	mux.Handle("PUT /api/admin/orders/{id}/status",
+		middleware.AuthMiddleware(db,
+			middleware.AdminMiddleware(db,
+				http.HandlerFunc(orderHandler.UpdateOrderStatus),
+			),
+		),
+	)
 
 	return mux
 }

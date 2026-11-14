@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"ecommerce-backend/internal/middleware"
 	"ecommerce-backend/internal/models"
@@ -123,5 +124,42 @@ func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Order cancelled successfully",
+	})
+}
+func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || orderID <= 0 {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	var request models.UpdateOrderStatusRequest
+
+	err = json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err = h.Service.UpdateOrderStatus(orderID, request.Status)
+	if err != nil {
+		if err.Error() == "invalid order status" ||
+			strings.HasPrefix(err.Error(), "cannot change order status") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "Order not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "Failed to update order status", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Order status updated successfully",
 	})
 }

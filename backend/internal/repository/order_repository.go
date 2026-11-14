@@ -613,3 +613,57 @@ func (r *OrderRepository) CancelOrder(
 
 	return tx.Commit()
 }
+func (r *OrderRepository) UpdateOrderStatus(orderID int64, newStatus string) error {
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var currentStatus string
+
+	err = tx.QueryRow(`
+        SELECT status
+        FROM orders
+        WHERE id = $1
+        FOR UPDATE
+    `, orderID).Scan(&currentStatus)
+
+	if err != nil {
+		return err
+	}
+
+	validTransition := false
+
+	switch currentStatus {
+	case "pending":
+		validTransition = newStatus == "confirmed"
+	case "confirmed":
+		validTransition = newStatus == "processing"
+	case "processing":
+		validTransition = newStatus == "shipped"
+	case "shipped":
+		validTransition = newStatus == "delivered"
+	}
+
+	if !validTransition {
+		return fmt.Errorf(
+			"cannot change order status from %s to %s",
+			currentStatus,
+			newStatus,
+		)
+	}
+
+	_, err = tx.Exec(`
+        UPDATE orders
+        SET status = $1,
+            updated_at = NOW()
+        WHERE id = $2
+    `, newStatus, orderID)
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
