@@ -86,6 +86,11 @@ func RegisterRoutes(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("PUT /api/products/{id}", productHandler.UpdateProduct)
 	mux.HandleFunc("DELETE /api/products/{id}", productHandler.DeleteProduct)
 
+	// Product Reviews
+	productReviewRepository := repository.NewProductReviewRepository(db)
+	productReviewService := services.NewProductReviewService(productReviewRepository)
+	productReviewHandler := handlers.NewProductReviewHandler(productReviewService)
+
 	mux.Handle("POST /api/cart/items", middleware.AuthMiddleware(db,
 		http.HandlerFunc(cartHandler.AddItem),
 	))
@@ -162,5 +167,46 @@ func RegisterRoutes(db *sql.DB) *http.ServeMux {
 		),
 	)
 
+	// Product Review routes
+
+	// Anyone can view reviews
+	mux.HandleFunc("GET /api/products/{id}/reviews",
+		productReviewHandler.GetReviewsByProductID,
+	)
+
+	// Only authenticated users can create reviews
+	mux.Handle("POST /api/products/{id}/reviews",
+		middleware.AuthMiddleware(db,
+			http.HandlerFunc(productReviewHandler.CreateReview),
+		),
+	)
+
+	// Only authenticated users can update their own reviews
+	mux.Handle("PUT /api/reviews/{id}",
+		middleware.AuthMiddleware(db,
+			http.HandlerFunc(productReviewHandler.UpdateReview),
+		),
+	)
+
+	// Only authenticated users can delete their own reviews
+	mux.Handle("DELETE /api/reviews/{id}",
+		middleware.AuthMiddleware(db,
+			http.HandlerFunc(productReviewHandler.DeleteReview),
+		),
+	)
+	
+	// Helpful vote routes
+
+	mux.Handle("POST /api/reviews/{id}/helpful",
+		middleware.AuthMiddleware(db,
+			http.HandlerFunc(productReviewHandler.AddHelpfulVote),
+		),
+	)
+
+	mux.Handle("DELETE /api/reviews/{id}/helpful",
+		middleware.AuthMiddleware(db,
+			http.HandlerFunc(productReviewHandler.RemoveHelpfulVote),
+		),
+	)
 	return mux
 }
