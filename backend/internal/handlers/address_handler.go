@@ -1,137 +1,95 @@
 package handlers
 
 import (
-	"database/sql"
-	"encoding/json"
 	"net/http"
-	"strconv"
 
-	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/services"
 )
 
 type AddressHandler struct {
-	Service *services.AddressService
+	addresses *services.AddressService
 }
 
-func NewAddressHandler(service *services.AddressService) *AddressHandler {
-	return &AddressHandler{Service: service}
+func NewAddressHandler(addresses *services.AddressService) *AddressHandler {
+	return &AddressHandler{addresses: addresses}
 }
 
-func (h *AddressHandler) CreateAddress(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	var request models.CreateAddressRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	address, err := h.Service.CreateAddress(userID, request)
+// List: GET /api/addresses (default first)
+func (h *AddressHandler) List(w http.ResponseWriter, r *http.Request) error {
+	list, err := h.addresses.List(r.Context(), auth.UserID(r.Context()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(address)
+	return httpx.JSON(w, http.StatusOK, list)
 }
 
-func (h *AddressHandler) GetAddresses(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	addresses, err := h.Service.GetAddresses(userID)
+// Get: GET /api/addresses/{id}
+func (h *AddressHandler) Get(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
 	if err != nil {
-		http.Error(w, "Failed to retrieve addresses", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(addresses)
+	a, err := h.addresses.Get(r.Context(), auth.UserID(r.Context()), id)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, a)
 }
 
-func (h *AddressHandler) UpdateAddress(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	addressID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || addressID <= 0 {
-		http.Error(w, "Invalid address ID", http.StatusBadRequest)
-		return
+// Create: POST /api/addresses
+func (h *AddressHandler) Create(w http.ResponseWriter, r *http.Request) error {
+	var in models.AddressInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		return err
 	}
-
-	var request models.UpdateAddressRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	address, err := h.Service.UpdateAddress(userID, addressID, request)
+	a, err := h.addresses.Create(r.Context(), auth.UserID(r.Context()), in)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "Address not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(address)
+	return httpx.JSON(w, http.StatusCreated, a)
 }
 
-func (h *AddressHandler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	addressID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || addressID <= 0 {
-		http.Error(w, "Invalid address ID", http.StatusBadRequest)
-		return
-	}
-
-	err = h.Service.DeleteAddress(userID, addressID)
+// Update: PUT /api/addresses/{id}
+func (h *AddressHandler) Update(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "Address not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to delete address", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Address deleted successfully",
-	})
+	var in models.AddressInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		return err
+	}
+	a, err := h.addresses.Update(r.Context(), auth.UserID(r.Context()), id, in)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, a)
 }
 
-func (h *AddressHandler) SetDefaultAddress(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	addressID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || addressID <= 0 {
-		http.Error(w, "Invalid address ID", http.StatusBadRequest)
-		return
-	}
-
-	err = h.Service.SetDefaultAddress(userID, addressID)
+// Delete: DELETE /api/addresses/{id}
+func (h *AddressHandler) Delete(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "Address not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to set default address", http.StatusInternalServerError)
-		return
+		return err
 	}
+	if err := h.addresses.Delete(r.Context(), auth.UserID(r.Context()), id); err != nil {
+		return err
+	}
+	return httpx.Message(w, http.StatusOK, "address deleted")
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Default address updated successfully",
-	})
+// SetDefault: PUT /api/addresses/{id}/default
+func (h *AddressHandler) SetDefault(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	a, err := h.addresses.SetDefault(r.Context(), auth.UserID(r.Context()), id)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, a)
 }

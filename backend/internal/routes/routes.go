@@ -1,212 +1,147 @@
+// Package routes builds the whole application: it creates every repository,
+// service and handler (dependency injection), maps URLs to handlers, and wraps
+// everything in the global middleware. Reading this file top to bottom shows
+// every endpoint the API offers and who may call it.
 package routes
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/config"
 	"ecommerce-backend/internal/handlers"
+	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/middleware"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/services"
 )
 
-func RegisterRoutes(db *sql.DB) *http.ServeMux {
+// New returns the root HTTP handler.
+func New(db *sql.DB, cfg config.Config) http.Handler {
+	// ---- repositories (SQL) ----
+	userRepo := repository.NewUserRepository(db)
+	productRepo := repository.NewProductRepository(db)
+	catalogRepo := repository.NewCatalogRepository(db)
+	cartRepo := repository.NewCartRepository(db)
+	favoriteRepo := repository.NewFavoriteRepository(db)
+	addressRepo := repository.NewAddressRepository(db)
+	orderRepo := repository.NewOrderRepository(db)
+	reviewRepo := repository.NewReviewRepository(db)
+	waitingRepo := repository.NewWaitingListRepository(db)
+
+	// ---- services (business rules) ----
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
+	userSvc := services.NewUserService(userRepo, tokens)
+	productSvc := services.NewProductService(productRepo, catalogRepo)
+	cartSvc := services.NewCartService(cartRepo)
+	favoriteSvc := services.NewFavoriteService(favoriteRepo)
+	addressSvc := services.NewAddressService(addressRepo)
+	orderSvc := services.NewOrderService(orderRepo)
+	reviewSvc := services.NewReviewService(reviewRepo, catalogRepo)
+	waitingSvc := services.NewWaitingListService(waitingRepo)
+
+	// ---- handlers (HTTP) ----
+	health := handlers.NewHealthHandler(db)
+	users := handlers.NewUserHandler(userSvc)
+	products := handlers.NewProductHandler(productSvc)
+	carts := handlers.NewCartHandler(cartSvc)
+	favorites := handlers.NewFavoriteHandler(favoriteSvc)
+	addresses := handlers.NewAddressHandler(addressSvc)
+	orders := handlers.NewOrderHandler(orderSvc)
+	reviews := handlers.NewReviewHandler(reviewSvc)
+	waiting := handlers.NewWaitingListHandler(waitingSvc)
+
+	// ---- access levels ----
 	mux := http.NewServeMux()
+	authenticate := middleware.Authenticate(tokens, userRepo)
 
-	// Health check
-	mux.HandleFunc("GET /{$}", handlers.HealthCheck)
+	public := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, httpx.Handle(h))
+	}
+	user := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, authenticate(httpx.Handle(h)))
+	}
+	admin := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, authenticate(middleware.RequireAdmin(httpx.Handle(h))))
+	}
 
-	// Products
-	productRepository := repository.NewProductRepository(db)
-	productService := services.NewProductService(productRepository)
-	productHandler := handlers.NewProductHandler(productService)
+	// Health
+	public("GET /{$}", health.Root)
+	public("GET /api/health", health.Health)
 
-	// Users
-	userRepository := repository.NewUserRepository(db)
-	userService := services.NewUserService(userRepository)
-	userHandler := handlers.NewUserHandler(userService)
+	// Account
+	public("POST /api/register", users.Register)
+	public("POST /api/login", users.Login)
+	user("GET /api/profile", users.Profile)
+	user("PUT /api/profile", users.UpdateProfile)
+	user("PUT /api/profile/password", users.ChangePassword)
+	user("DELETE /api/profile", users.Deactivate)
 
-	//Favorites
-	favoriteRepository := repository.NewFavoriteRepository(db)
-	favoriteService := services.NewFavoriteService(favoriteRepository)
-	favoriteHandler := handlers.NewFavoriteHandler(favoriteService)
+	// Catalog (public)
+	public("GET /api/products", products.List)
+	public("GET /api/products/{id}", products.Get)
+	public("GET /api/products/{id}/images", products.Images)
+	public("GET /api/products/{id}/colors", products.Colors)
+	public("GET /api/products/{id}/reviews", reviews.ListForProduct)
+	public("GET /api/categories", products.Categories)
 
-	//Addresses
-	addressRepository := repository.NewAddressRepository(db)
-	addressService := services.NewAddressService(addressRepository)
-	addressHandler := handlers.NewAddressHandler(addressService)
+	// Catalog management (admin)
+	admin("GET /api/admin/products", products.AdminList)
+	admin("GET /api/admin/products/{id}", products.AdminGet)
+	admin("POST /api/products", products.Create)
+	admin("PUT /api/products/{id}", products.Update)
+	admin("DELETE /api/products/{id}", products.Delete)
+	admin("POST /api/products/{id}/images", products.AddImage)
+	admin("PUT /api/product-images/{id}/primary", products.SetPrimaryImage)
+	admin("DELETE /api/product-images/{id}", products.DeleteImage)
+	admin("POST /api/products/{id}/colors", products.AddColor)
+	admin("DELETE /api/product-colors/{id}", products.DeleteColor)
 
-	//cart
-	cartRepository := repository.NewCartRepository(db)
-	cartService := services.NewCartService(cartRepository)
-	cartHandler := handlers.NewCartHandler(cartService)
+	// Cart
+	user("GET /api/cart", carts.Get)
+	user("POST /api/cart/items", carts.AddItem)
+	user("PUT /api/cart/items/{id}", carts.UpdateItem)
+	user("DELETE /api/cart/items/{id}", carts.RemoveItem)
+	user("DELETE /api/cart", carts.Clear)
 
-	//Orders
-	orderRepository := repository.NewOrderRepository(db)
-	orderService := services.NewOrderService(orderRepository)
-	orderHandler := handlers.NewOrderHandler(orderService)
+	// Favorites
+	user("GET /api/favorites", favorites.List)
+	user("POST /api/favorites", favorites.Add)
+	user("DELETE /api/favorites/{product_id}", favorites.Remove)
 
-	// User routes
-	mux.HandleFunc("POST /api/register", userHandler.RegisterUser)
-	mux.HandleFunc("POST /api/login", userHandler.LoginUser)
+	// Addresses
+	user("GET /api/addresses", addresses.List)
+	user("POST /api/addresses", addresses.Create)
+	user("GET /api/addresses/{id}", addresses.Get)
+	user("PUT /api/addresses/{id}", addresses.Update)
+	user("DELETE /api/addresses/{id}", addresses.Delete)
+	user("PUT /api/addresses/{id}/default", addresses.SetDefault)
 
-	mux.Handle("GET /api/profile", middleware.AuthMiddleware(db,
-		http.HandlerFunc(userHandler.GetUserProfile),
-	))
+	// Orders
+	user("POST /api/orders", orders.Checkout)
+	user("GET /api/orders", orders.ListMine)
+	user("GET /api/orders/{id}", orders.GetMine)
+	user("POST /api/orders/{id}/cancel", orders.CancelMine)
+	admin("GET /api/admin/orders", orders.AdminList)
+	admin("GET /api/admin/orders/{id}", orders.AdminGet)
+	admin("PUT /api/admin/orders/{id}/status", orders.AdminUpdateStatus)
 
-	mux.Handle("PUT /api/profile", middleware.AuthMiddleware(db,
-		http.HandlerFunc(userHandler.GetUserProfile),
-	))
+	// Reviews
+	user("POST /api/products/{id}/reviews", reviews.Create)
+	user("PUT /api/reviews/{id}", reviews.Update)
+	user("DELETE /api/reviews/{id}", reviews.Delete)
+	user("POST /api/reviews/{id}/helpful", reviews.AddHelpfulVote)
+	user("DELETE /api/reviews/{id}/helpful", reviews.RemoveHelpfulVote)
 
-	mux.Handle("PUT /api/profile/password", middleware.AuthMiddleware(db,
-		http.HandlerFunc(userHandler.ChangePassword),
-	))
+	// Waiting list
+	user("POST /api/waiting-list", waiting.Join)
+	user("GET /api/waiting-list", waiting.ListMine)
+	user("DELETE /api/waiting-list/{id}", waiting.CancelMine)
+	admin("GET /api/admin/waiting-list", waiting.AdminList)
+	admin("PUT /api/admin/waiting-list/{id}/status", waiting.AdminUpdateStatus)
 
-	mux.Handle("DELETE /api/profile", middleware.AuthMiddleware(db,
-		http.HandlerFunc(userHandler.DeactivateUser),
-	))
-
-	mux.Handle("GET /api/protected", middleware.AuthMiddleware(db,
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"message": "You are authenticated!",
-				"user_id": userID,
-			})
-		}),
-	))
-
-	// Product routes
-	mux.HandleFunc("GET /api/products", productHandler.GetAllProducts)
-	mux.HandleFunc("GET /api/products/{id}", productHandler.GetProductByID)
-	mux.HandleFunc("POST /api/products", productHandler.CreateProduct)
-	mux.HandleFunc("PUT /api/products/{id}", productHandler.UpdateProduct)
-	mux.HandleFunc("DELETE /api/products/{id}", productHandler.DeleteProduct)
-
-	// Product Reviews
-	productReviewRepository := repository.NewProductReviewRepository(db)
-	productReviewService := services.NewProductReviewService(productReviewRepository)
-	productReviewHandler := handlers.NewProductReviewHandler(productReviewService)
-
-	mux.Handle("POST /api/cart/items", middleware.AuthMiddleware(db,
-		http.HandlerFunc(cartHandler.AddItem),
-	))
-
-	mux.Handle("GET /api/cart", middleware.AuthMiddleware(db,
-		http.HandlerFunc(cartHandler.GetCart),
-	))
-
-	mux.Handle("PUT /api/cart/items/{id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(cartHandler.UpdateItemQuantity),
-	))
-
-	mux.Handle("DELETE /api/cart/items/{id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(cartHandler.RemoveItem),
-	))
-
-	mux.Handle("DELETE /api/cart", middleware.AuthMiddleware(db,
-		http.HandlerFunc(cartHandler.ClearCart),
-	))
-
-	mux.Handle("GET /api/favorites", middleware.AuthMiddleware(db,
-		http.HandlerFunc(favoriteHandler.GetFavorites),
-	))
-
-	mux.Handle("POST /api/favorites", middleware.AuthMiddleware(db,
-		http.HandlerFunc(favoriteHandler.AddFavorite),
-	))
-
-	mux.Handle("DELETE /api/favorites/{product_id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(favoriteHandler.RemoveFavorite),
-	))
-
-	mux.Handle("GET /api/addresses", middleware.AuthMiddleware(db,
-		http.HandlerFunc(addressHandler.GetAddresses),
-	))
-
-	mux.Handle("POST /api/addresses", middleware.AuthMiddleware(db,
-		http.HandlerFunc(addressHandler.CreateAddress),
-	))
-
-	mux.Handle("PUT /api/addresses/{id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(addressHandler.UpdateAddress),
-	))
-
-	mux.Handle("DELETE /api/addresses/{id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(addressHandler.DeleteAddress),
-	))
-
-	mux.Handle("PUT /api/addresses/{id}/default", middleware.AuthMiddleware(db,
-		http.HandlerFunc(addressHandler.SetDefaultAddress),
-	))
-
-	mux.Handle("POST /api/orders", middleware.AuthMiddleware(db,
-		http.HandlerFunc(orderHandler.CreateOrder),
-	))
-
-	mux.Handle("GET /api/orders", middleware.AuthMiddleware(db,
-		http.HandlerFunc(orderHandler.GetOrders),
-	))
-
-	mux.Handle("GET /api/orders/{id}", middleware.AuthMiddleware(db,
-		http.HandlerFunc(orderHandler.GetOrderByID),
-	))
-
-	mux.Handle("POST /api/orders/{id}/cancel", middleware.AuthMiddleware(db,
-		http.HandlerFunc(orderHandler.CancelOrder),
-	))
-
-	mux.Handle("PUT /api/admin/orders/{id}/status",
-		middleware.AuthMiddleware(db,
-			middleware.AdminMiddleware(db,
-				http.HandlerFunc(orderHandler.UpdateOrderStatus),
-			),
-		),
-	)
-
-	// Product Review routes
-
-	// Anyone can view reviews
-	mux.HandleFunc("GET /api/products/{id}/reviews",
-		productReviewHandler.GetReviewsByProductID,
-	)
-
-	// Only authenticated users can create reviews
-	mux.Handle("POST /api/products/{id}/reviews",
-		middleware.AuthMiddleware(db,
-			http.HandlerFunc(productReviewHandler.CreateReview),
-		),
-	)
-
-	// Only authenticated users can update their own reviews
-	mux.Handle("PUT /api/reviews/{id}",
-		middleware.AuthMiddleware(db,
-			http.HandlerFunc(productReviewHandler.UpdateReview),
-		),
-	)
-
-	// Only authenticated users can delete their own reviews
-	mux.Handle("DELETE /api/reviews/{id}",
-		middleware.AuthMiddleware(db,
-			http.HandlerFunc(productReviewHandler.DeleteReview),
-		),
-	)
-	
-	// Helpful vote routes
-
-	mux.Handle("POST /api/reviews/{id}/helpful",
-		middleware.AuthMiddleware(db,
-			http.HandlerFunc(productReviewHandler.AddHelpfulVote),
-		),
-	)
-
-	mux.Handle("DELETE /api/reviews/{id}/helpful",
-		middleware.AuthMiddleware(db,
-			http.HandlerFunc(productReviewHandler.RemoveHelpfulVote),
-		),
-	)
-	return mux
+	// Global middleware, outermost first: recover from panics, log the request,
+	// then answer CORS before routing.
+	return middleware.Recover(middleware.Logger(middleware.CORS(cfg.AllowedOrigins)(mux)))
 }

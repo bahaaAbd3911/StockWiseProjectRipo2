@@ -1,210 +1,84 @@
 package handlers
 
 import (
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"net/http"
-	"strings"
 
-	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/services"
-	"ecommerce-backend/internal/validators"
 )
 
 type UserHandler struct {
-	Service *services.UserService
+	users *services.UserService
 }
 
-func NewUserHandler(service *services.UserService) *UserHandler {
-	return &UserHandler{
-		Service: service,
+func NewUserHandler(users *services.UserService) *UserHandler { return &UserHandler{users: users} }
+
+// Register: POST /api/register
+func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) error {
+	var req models.RegisterRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
 	}
+	user, err := h.users.Register(r.Context(), req)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, user)
 }
 
-func (h *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
-
-	// Decode JSON request
-	var user models.RegisterUserRequest
-
-	err := json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
+// Login: POST /api/login -> {user, token, expires_at}
+func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) error {
+	var req models.LoginRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
 	}
-
-	// Validate registration data
-	err = validators.ValidateUserRegistration(user)
+	res, err := h.users.Login(r.Context(), req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return err
 	}
-
-	// Register user
-	newUser, err := h.Service.RegisterUser(user)
-	if err != nil {
-		http.Error(w, "Failed to register user", http.StatusInternalServerError)
-		return
-	}
-
-	// Return created user
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-
-	json.NewEncoder(w).Encode(newUser)
+	return httpx.JSON(w, http.StatusOK, res)
 }
-func (h *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 
-	// Decode JSON request
-	var login models.LoginRequest
-
-	err := json.NewDecoder(r.Body).Decode(&login)
+// Profile: GET /api/profile
+func (h *UserHandler) Profile(w http.ResponseWriter, r *http.Request) error {
+	user, err := h.users.Profile(r.Context(), auth.UserID(r.Context()))
 	if err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
+		return err
 	}
-
-	// Validate login data
-	err = validators.ValidateLogin(login)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Login user
-	user, err := h.Service.LoginUser(login)
-	if err != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-		return
-	}
-
-	// Return user information
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	json.NewEncoder(w).Encode(user)
+	return httpx.JSON(w, http.StatusOK, user)
 }
-func (h *UserHandler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	user, err := h.Service.GetUserProfile(userID)
+// UpdateProfile: PUT /api/profile
+func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) error {
+	var req models.UpdateProfileRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	user, err := h.users.UpdateProfile(r.Context(), auth.UserID(r.Context()), req)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to retrieve profile", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	return httpx.JSON(w, http.StatusOK, user)
 }
-func (h *UserHandler) UpdateUserProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+
+// ChangePassword: PUT /api/profile/password
+func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) error {
+	var req models.ChangePasswordRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
 	}
-
-	var request models.UpdateProfileRequest
-
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+	if err := h.users.ChangePassword(r.Context(), auth.UserID(r.Context()), req); err != nil {
+		return err
 	}
-
-	if strings.TrimSpace(request.FirstName) == "" ||
-		strings.TrimSpace(request.LastName) == "" ||
-		strings.TrimSpace(request.Phone) == "" {
-		http.Error(w, "First name, last name, and phone are required", http.StatusBadRequest)
-		return
-	}
-
-	user, err := h.Service.UpdateUserProfile(userID, request)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	return httpx.Message(w, http.StatusOK, "password changed successfully")
 }
-func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+
+// Deactivate: DELETE /api/profile
+func (h *UserHandler) Deactivate(w http.ResponseWriter, r *http.Request) error {
+	if err := h.users.Deactivate(r.Context(), auth.UserID(r.Context())); err != nil {
+		return err
 	}
-
-	var request models.ChangePasswordRequest
-
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if request.CurrentPassword == "" || request.NewPassword == "" {
-		http.Error(w, "Both passwords are required", http.StatusBadRequest)
-		return
-	}
-
-	err = h.Service.ChangePassword(userID, request)
-	if err != nil {
-		if err.Error() == "current password is incorrect" {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		if err.Error() == "new password must be at least 8 characters" {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		http.Error(w, "Failed to change password", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Password changed successfully",
-	})
-}
-func (h *UserHandler) DeactivateUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	err := h.Service.DeactivateUser(userID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Account not found or already deactivated", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to deactivate account", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Account deactivated successfully",
-	})
+	return httpx.Message(w, http.StatusOK, "account deactivated")
 }

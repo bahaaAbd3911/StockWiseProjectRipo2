@@ -1,67 +1,58 @@
 package services
 
 import (
+	"context"
+
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/repository"
-	"fmt"
+	"ecommerce-backend/internal/validators"
 )
 
+// CartService: every change returns the updated cart, so the frontend can
+// re-render from the response without another request.
 type CartService struct {
-	Repository *repository.CartRepository
+	carts *repository.CartRepository
 }
 
-func NewCartService(repo *repository.CartRepository) *CartService {
-	return &CartService{
-		Repository: repo,
-	}
+func NewCartService(carts *repository.CartRepository) *CartService { return &CartService{carts: carts} }
+
+func (s *CartService) Get(ctx context.Context, userID int64) (models.Cart, error) {
+	return s.carts.Get(ctx, userID)
 }
 
-func (s *CartService) GetCart(userID int64) (models.Cart, error) {
-	return s.Repository.GetCartByUserID(userID)
+func (s *CartService) AddItem(ctx context.Context, userID int64, req models.AddCartItemRequest) (models.Cart, error) {
+	if req.Quantity == 0 {
+		req.Quantity = 1 // "add to cart" without a quantity means one
+	}
+	if err := validators.ValidateAddCartItem(&req); err != nil {
+		return models.Cart{}, err
+	}
+	if err := s.carts.AddItem(ctx, userID, req); err != nil {
+		return models.Cart{}, err
+	}
+	return s.carts.Get(ctx, userID)
 }
 
-// Add "fmt" to your imports at the top of the file if it's not already there.
-
-func (s *CartService) AddItem(userID int64, request models.AddCartItemRequest) error {
-	if request.ProductID <= 0 {
-		return fmt.Errorf("invalid product ID")
+func (s *CartService) UpdateItem(ctx context.Context, userID, itemID int64, req models.UpdateCartItemRequest) (models.Cart, error) {
+	if err := validators.ValidateUpdateCartItem(&req); err != nil {
+		return models.Cart{}, err
 	}
-
-	if request.Quantity <= 0 {
-		return fmt.Errorf("quantity must be at least 1")
+	if err := s.carts.UpdateItem(ctx, userID, itemID, req); err != nil {
+		return models.Cart{}, err
 	}
-
-	return s.Repository.AddItem(userID, request)
+	return s.carts.Get(ctx, userID)
 }
 
-func (s *CartService) UpdateItemQuantity(
-	userID int64,
-	itemID int64,
-	quantity int,
-) error {
-	if itemID <= 0 {
-		return fmt.Errorf("invalid cart item ID")
+func (s *CartService) RemoveItem(ctx context.Context, userID, itemID int64) (models.Cart, error) {
+	if err := s.carts.RemoveItem(ctx, userID, itemID); err != nil {
+		return models.Cart{}, err
 	}
-
-	if quantity <= 0 {
-		return fmt.Errorf("quantity must be greater than zero")
-	}
-
-	return s.Repository.UpdateItemQuantity(userID, itemID, quantity)
+	return s.carts.Get(ctx, userID)
 }
 
-func (s *CartService) RemoveItem(userID int64, itemID int64) error {
-	if itemID <= 0 {
-		return fmt.Errorf("invalid cart item ID")
+func (s *CartService) Clear(ctx context.Context, userID int64) (models.Cart, error) {
+	if err := s.carts.Clear(ctx, userID); err != nil {
+		return models.Cart{}, err
 	}
-
-	return s.Repository.RemoveItem(userID, itemID)
-}
-
-func (s *CartService) ClearCart(userID int64) error {
-	if userID <= 0 {
-		return fmt.Errorf("invalid user ID")
-	}
-
-	return s.Repository.ClearCart(userID)
+	return s.carts.Get(ctx, userID)
 }
