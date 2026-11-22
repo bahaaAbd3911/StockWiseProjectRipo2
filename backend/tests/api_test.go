@@ -29,12 +29,14 @@ import (
 
 	"ecommerce-backend/internal/config"
 	"ecommerce-backend/internal/database"
+	"ecommerce-backend/internal/migrate"
 	"ecommerce-backend/internal/routes"
 )
 
 var (
-	server *httptest.Server
-	testDB *sql.DB
+	server  *httptest.Server
+	testDB  *sql.DB
+	baseURL string // INTEGRATION_DATABASE_URL
 )
 
 func TestMain(m *testing.M) {
@@ -43,6 +45,7 @@ func TestMain(m *testing.M) {
 		fmt.Println("integration tests skipped: INTEGRATION_DATABASE_URL is not set")
 		os.Exit(m.Run())
 	}
+	baseURL = base
 	code, err := runWithTempDB(m, base)
 	if err != nil {
 		fmt.Println("integration setup failed:", err)
@@ -76,12 +79,9 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 	}
 	defer testDB.Close()
 
-	schema, err := os.ReadFile("../migrations/000001_baseline.up.sql")
-	if err != nil {
-		return 0, err
-	}
-	if _, err := testDB.ExecContext(ctx, string(schema)); err != nil {
-		return 0, fmt.Errorf("apply migration: %w", err)
+	// Apply every migration exactly like `go run ./cmd/migrate up` does.
+	if _, err := migrate.Up(ctx, testDB, "../migrations"); err != nil {
+		return 0, fmt.Errorf("apply migrations: %w", err)
 	}
 
 	server = httptest.NewServer(routes.New(testDB, config.Config{

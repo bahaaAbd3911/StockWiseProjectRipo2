@@ -17,7 +17,8 @@ func NewOrderHandler(orders *services.OrderService) *OrderHandler {
 	return &OrderHandler{orders: orders}
 }
 
-// Checkout: POST /api/orders {address_id?} - address_id omitted = default address
+// Checkout: POST /api/orders {address_id?, payment_method?}
+// address_id omitted = default address; payment_method omitted = cash_on_delivery
 func (h *OrderHandler) Checkout(w http.ResponseWriter, r *http.Request) error {
 	var req models.CreateOrderRequest
 	if err := httpx.DecodeOptionalJSON(w, r, &req); err != nil { // an empty body is allowed
@@ -65,14 +66,15 @@ func (h *OrderHandler) CancelMine(w http.ResponseWriter, r *http.Request) error 
 	return httpx.JSON(w, http.StatusOK, order)
 }
 
-// AdminList: GET /api/admin/orders?status=&limit=&offset=
+// AdminList: GET /api/admin/orders?status=&payment_method=&limit=&offset=
 func (h *OrderHandler) AdminList(w http.ResponseWriter, r *http.Request) error {
 	limit, offset, err := httpx.Pagination(r)
 	if err != nil {
 		return err
 	}
 	page, err := h.orders.List(r.Context(), models.OrderFilter{
-		Status: r.URL.Query().Get("status"), Limit: limit, Offset: offset,
+		Status: r.URL.Query().Get("status"), PaymentMethod: r.URL.Query().Get("payment_method"),
+		Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		return err
@@ -93,7 +95,7 @@ func (h *OrderHandler) AdminGet(w http.ResponseWriter, r *http.Request) error {
 	return httpx.JSON(w, http.StatusOK, order)
 }
 
-// AdminUpdateStatus: PUT /api/admin/orders/{id}/status {status}
+// AdminUpdateStatus: PUT /api/admin/orders/{id}/status {status, payment_collected?}
 func (h *OrderHandler) AdminUpdateStatus(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {
@@ -103,7 +105,7 @@ func (h *OrderHandler) AdminUpdateStatus(w http.ResponseWriter, r *http.Request)
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	order, err := h.orders.UpdateStatus(r.Context(), id, req.Status)
+	order, err := h.orders.UpdateStatus(r.Context(), auth.UserID(r.Context()), id, req)
 	if err != nil {
 		return err
 	}

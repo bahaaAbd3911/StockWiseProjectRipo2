@@ -18,8 +18,8 @@ func NewProductRepository(db *sql.DB) *ProductRepository { return &ProductReposi
 // strings are ever put into the SQL, so sorting cannot be used for injection.
 var productSorts = map[string]string{
 	"newest":     "p.created_at DESC, p.id DESC",
-	"price_asc":  "p.price * (100 - p.discount_value) ASC, p.id",
-	"price_desc": "p.price * (100 - p.discount_value) DESC, p.id",
+	"price_asc":  effectivePriceSQL + " ASC, p.id", // final price, including live offers
+	"price_desc": effectivePriceSQL + " DESC, p.id",
 	"name":       "p.name ASC, p.id",
 }
 
@@ -37,6 +37,12 @@ func (r *ProductRepository) List(ctx context.Context, f models.ProductFilter) (m
 	}
 	if f.InStockOnly {
 		w.addRaw("p.stock > 0")
+	}
+	if f.OnOfferOnly {
+		w.addRaw("EXISTS (SELECT 1 FROM offers o WHERE " + offerAppliesSQL + ")")
+	}
+	if f.OfferID > 0 {
+		w.add("EXISTS (SELECT 1 FROM offers o WHERE o.id = ? AND "+offerAppliesSQL+")", f.OfferID)
 	}
 	if f.Category != "" {
 		// The same $n is used twice; ::text pins its type for PostgreSQL.
@@ -71,7 +77,14 @@ func (r *ProductRepository) List(ctx context.Context, f models.ProductFilter) (m
 		}
 		page.Items = append(page.Items, p)
 	}
-	return page, rows.Err()
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	ptrs := make([]*models.Product, len(page.Items))
+	for i := range page.Items {
+		ptrs[i] = &page.Items[i]
+	}
+	return page, attachOffers(ctx, r.db, ptrs...)
 }
 
 // Get returns one product. Inactive (soft-deleted) products are only visible
@@ -81,7 +94,10 @@ func (r *ProductRepository) Get(ctx context.Context, id int64, includeInactive b
 		`SELECT `+productColumns+` FROM products p WHERE p.id = $1 AND (p.is_active OR $2)`,
 		id, includeInactive)
 	p, err := scanProduct(row)
-	return p, apperr.FromDB(err, "product not found")
+	if err != nil {
+		return p, apperr.FromDB(err, "product not found")
+	}
+	return p, attachOffers(ctx, r.db, &p)
 }
 
 // Create inserts a product; is_active defaults to true when not given.

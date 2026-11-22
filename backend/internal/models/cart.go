@@ -11,7 +11,8 @@ import (
 type Cart struct {
 	ID                  int64           `json:"id"`
 	Items               []CartItem      `json:"items"`
-	ItemCount           int             `json:"item_count"` // sum of quantities
+	Bundles             []CartBundle    `json:"bundles"`
+	ItemCount           int             `json:"item_count"` // sum of quantities (products + bundles)
 	Subtotal            decimal.Decimal `json:"subtotal"`
 	HasUnavailableItems bool            `json:"has_unavailable_items"`
 	UpdatedAt           time.Time       `json:"updated_at"`
@@ -25,7 +26,8 @@ type CartItem struct {
 	PrimaryImageURL  *string         `json:"primary_image_url"`
 	OriginalPrice    decimal.Decimal `json:"original_price"`
 	DiscountValue    decimal.Decimal `json:"discount_value"`
-	UnitPrice        decimal.Decimal `json:"unit_price"` // after discount
+	UnitPrice        decimal.Decimal `json:"unit_price"` // best price: discount or live offer
+	Offer            *AppliedOffer   `json:"offer"`
 	Quantity         int             `json:"quantity"`
 	LineTotal        decimal.Decimal `json:"line_total"`
 	SelectedColor    *string         `json:"selected_color"`

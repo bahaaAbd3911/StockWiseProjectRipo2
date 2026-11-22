@@ -29,6 +29,9 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	orderRepo := repository.NewOrderRepository(db)
 	reviewRepo := repository.NewReviewRepository(db)
 	waitingRepo := repository.NewWaitingListRepository(db)
+	offerRepo := repository.NewOfferRepository(db)
+	bundleRepo := repository.NewBundleRepository(db)
+	debtRepo := repository.NewDebtRepository(db)
 
 	// ---- services (business rules) ----
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
@@ -40,6 +43,9 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	orderSvc := services.NewOrderService(orderRepo)
 	reviewSvc := services.NewReviewService(reviewRepo, catalogRepo)
 	waitingSvc := services.NewWaitingListService(waitingRepo)
+	offerSvc := services.NewOfferService(offerRepo, productRepo)
+	bundleSvc := services.NewBundleService(bundleRepo)
+	debtSvc := services.NewDebtService(debtRepo)
 
 	// ---- handlers (HTTP) ----
 	health := handlers.NewHealthHandler(db)
@@ -51,6 +57,9 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	orders := handlers.NewOrderHandler(orderSvc)
 	reviews := handlers.NewReviewHandler(reviewSvc)
 	waiting := handlers.NewWaitingListHandler(waitingSvc)
+	offers := handlers.NewOfferHandler(offerSvc)
+	bundles := handlers.NewBundleHandler(bundleSvc)
+	debts := handlers.NewDebtHandler(debtSvc)
 
 	// ---- access levels ----
 	mux := http.NewServeMux()
@@ -133,6 +142,35 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	user("DELETE /api/reviews/{id}", reviews.Delete)
 	user("POST /api/reviews/{id}/helpful", reviews.AddHelpfulVote)
 	user("DELETE /api/reviews/{id}/helpful", reviews.RemoveHelpfulVote)
+
+	// Offers (timed promotions)
+	public("GET /api/offers", offers.ListLive)
+	public("GET /api/offers/{id}", offers.GetLive)
+	admin("GET /api/admin/offers", offers.AdminList)
+	admin("GET /api/admin/offers/{id}", offers.AdminGet)
+	admin("POST /api/admin/offers", offers.Create)
+	admin("PUT /api/admin/offers/{id}", offers.Update)
+	admin("DELETE /api/admin/offers/{id}", offers.Delete)
+
+	// Bundles
+	public("GET /api/bundles", bundles.List)
+	public("GET /api/bundles/{id}", bundles.Get)
+	admin("GET /api/admin/bundles", bundles.AdminList)
+	admin("GET /api/admin/bundles/{id}", bundles.AdminGet)
+	admin("POST /api/admin/bundles", bundles.Create)
+	admin("PUT /api/admin/bundles/{id}", bundles.Update)
+	admin("DELETE /api/admin/bundles/{id}", bundles.Delete)
+	user("POST /api/cart/bundles", carts.AddBundle)
+	user("PUT /api/cart/bundles/{id}", carts.UpdateBundle)
+	user("DELETE /api/cart/bundles/{id}", carts.RemoveBundle)
+
+	// Customer debts (pay later)
+	user("GET /api/debt", debts.Mine)
+	admin("GET /api/admin/debts", debts.AdminList)
+	admin("GET /api/admin/customers/{id}/debt", debts.AdminStatement)
+	admin("PUT /api/admin/customers/{id}/credit-limit", debts.SetCreditLimit)
+	admin("POST /api/admin/customers/{id}/debt/payments", debts.RecordPayment)
+	admin("POST /api/admin/customers/{id}/debt/adjustments", debts.RecordAdjustment)
 
 	// Waiting list
 	user("POST /api/waiting-list", waiting.Join)

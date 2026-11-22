@@ -19,7 +19,8 @@ type Product struct {
 	CategoryAr      string          `json:"category_ar"`
 	Price           decimal.Decimal `json:"price"`
 	DiscountValue   decimal.Decimal `json:"discount_value"` // percent, 0..100
-	FinalPrice      decimal.Decimal `json:"final_price"`    // price after discount
+	FinalPrice      decimal.Decimal `json:"final_price"`    // best price: product discount or live offer
+	Offer           *AppliedOffer   `json:"offer"`          // the offer that gave final_price, if any
 	Stock           int             `json:"stock"`
 	InStock         bool            `json:"in_stock"`
 	IsActive        bool            `json:"is_active"`
@@ -57,9 +58,11 @@ type ProductInput struct {
 type ProductFilter struct {
 	Category        string
 	Search          string
-	Sort            string // newest | price_asc | price_desc | name
+	Sort            string // newest | price_asc | price_desc | name (price = final price incl. offers)
 	InStockOnly     bool
-	IncludeInactive bool // admin listing only
+	OnOfferOnly     bool  // only products with a live offer
+	OfferID         int64 // only products covered by this live offer
+	IncludeInactive bool  // admin listing only
 	Limit           int
 	Offset          int
 }

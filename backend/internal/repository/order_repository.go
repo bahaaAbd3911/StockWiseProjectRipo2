@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ecommerce-backend/internal/apperr"
@@ -45,28 +46,38 @@ func scanOrder(s scanner, withCustomer bool) (models.Order, error) {
 		o.Customer = &c
 	}
 	o.Items = []models.OrderItem{}
+	o.Bundles = []models.OrderBundle{}
 	return o, nil
 }
 
-// Checkout turns the user's cart into an order. Everything happens in ONE
-// transaction, so either all of it happens or none of it does:
+// Checkout turns the user's cart (products AND bundles) into an order.
+// Everything happens in ONE transaction, so either all of it happens or none:
 //
 //  1. load the delivery address (must belong to the user; default if none given)
-//  2. lock the cart row       -> two checkouts by the same user run one at a time
-//  3. load the cart lines and lock their product rows (in product-id order to
-//     avoid deadlocks) -> two customers cannot both buy the last unit
-//  4. check every line with the same rule the cart view uses (active, stock,
-//     color); report ALL problems at once
-//  5. compute prices with the discount (exact decimals)
-//  6. insert the order with a COPY of the address
-//  7. insert order items with a COPY of name/price/color, and reduce stock
-//  8. empty the cart
-func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID *int64) (int64, error) {
+//  2. pay later: lock the user row, so two pay-later checkouts cannot both
+//     use the same available credit
+//  3. lock the cart row         -> one checkout per user at a time
+//  4. lock EVERY product the cart needs - single items and the products inside
+//     bundles - in one statement, in id order (no deadlocks)
+//  5. check every line with the same rules the cart view uses, plus the
+//     combined demand per product (a product can be in the cart alone AND
+//     inside a bundle); report ALL problems at once
+//  6. compute prices: best of product discount / live offers; bundle price
+//  7. pay later: balance + total must fit within the credit limit
+//  8. insert the order (address copy), items (name/price/offer copy), bundles
+//     (with their products), reduce stock, charge the debt account if pay later
+//  9. empty the cart
+func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID *int64, method string) (int64, error) {
 	var orderID int64
 	err := database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
 		addr, err := checkoutAddress(ctx, tx, userID, addressID)
 		if err != nil {
 			return err
+		}
+		if method == models.PaymentPayLater {
+			if err := lockUser(ctx, tx, userID); err != nil {
+				return err
+			}
 		}
 
 		var cartID int64
@@ -78,26 +89,77 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			return err
 		}
 
-		lines, err := loadCartLines(ctx, tx, cartID, "ci.product_id", "FOR UPDATE OF p")
+		if _, err := tx.ExecContext(ctx, `
+			SELECT id FROM products WHERE id IN (
+				SELECT product_id FROM cart_items WHERE cart_id = $1
+				UNION
+				SELECT bi.product_id FROM cart_bundles cb JOIN bundle_items bi ON bi.bundle_id = cb.bundle_id
+				WHERE cb.cart_id = $1)
+			ORDER BY id FOR UPDATE`, cartID); err != nil {
+			return err
+		}
+
+		lines, err := loadCartLines(ctx, tx, cartID, "ci.product_id", "")
 		if err != nil {
 			return err
 		}
-		if len(lines) == 0 {
+		bundles, err := loadCartBundleLines(ctx, tx, cartID)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 && len(bundles) == 0 {
 			return apperr.Conflict("your cart is empty")
 		}
+
+		// Per-line problems, then the combined demand for each product.
 		var problems []string
+		need := map[int64]int{}
+		stock := map[int64]int{}
+		names := map[int64]string{}
 		for _, l := range lines {
 			if p := l.problem(); p != "" {
 				problems = append(problems, fmt.Sprintf("%s: %s", l.Name, p))
 			}
+			need[l.ProductID] += l.Quantity
+			stock[l.ProductID], names[l.ProductID] = l.Stock, l.Name
+		}
+		for _, b := range bundles {
+			if p := b.problem(); p != "" {
+				problems = append(problems, fmt.Sprintf("%s: %s", b.bundle.Name, p))
+			}
+			for _, c := range b.comps {
+				need[c.ProductID] += c.Quantity * b.Quantity
+				stock[c.ProductID], names[c.ProductID] = c.Stock, c.ProductName
+			}
+		}
+		if len(problems) == 0 {
+			for pid, n := range need {
+				if n > stock[pid] {
+					problems = append(problems, fmt.Sprintf("%s: only %d left in stock, but your cart needs %d",
+						names[pid], stock[pid], n))
+				}
+			}
 		}
 		if len(problems) > 0 {
+			sort.Strings(problems)
 			return apperr.Conflict("some items in your cart cannot be ordered - " + strings.Join(problems, "; "))
 		}
 
 		total := decimal.Zero
 		for _, l := range lines {
-			total = total.Add(pricing.LineTotal(l.unitPrice(), l.Quantity))
+			unit, _ := l.unitPrice()
+			total = total.Add(pricing.LineTotal(unit, l.Quantity))
+		}
+		for _, b := range bundles {
+			total = total.Add(pricing.LineTotal(b.bundle.Price, b.Quantity))
+		}
+
+		paymentStatus := models.PaymentPending
+		if method == models.PaymentPayLater {
+			if err := checkCredit(ctx, tx, userID, total); err != nil {
+				return err
+			}
+			paymentStatus = models.PaymentDeferred
 		}
 
 		if err := tx.QueryRowContext(ctx, `
@@ -108,41 +170,104 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			RETURNING id`,
 			userID, addr.ID, addr.RecipientName, addr.Phone, addr.City, addr.Area, addr.Street,
 			addr.BuildingNumber, addr.ApartmentNumber, addr.AdditionalInstructions,
-			total, models.OrderPending, models.PaymentCashOnDelivery, models.PaymentPending,
+			total, models.OrderPending, method, paymentStatus,
 		).Scan(&orderID); err != nil {
 			return err
 		}
 
 		for _, l := range lines {
-			unit := l.unitPrice()
+			unit, offer := l.unitPrice()
+			var offerID *int64
+			var offerName *string
+			if offer != nil {
+				offerID, offerName = &offer.ID, &offer.Name
+			}
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO order_items (order_id, product_id, product_name, product_name_ar, quantity,
-				                         unit_price, selected_color, selected_color_ar, subtotal)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				                         unit_price, selected_color, selected_color_ar, subtotal, offer_id, offer_name)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 				orderID, l.ProductID, l.Name, l.NameAr, l.Quantity,
-				unit, l.Color, l.ColorAr, pricing.LineTotal(unit, l.Quantity),
+				unit, l.Color, l.ColorAr, pricing.LineTotal(unit, l.Quantity), offerID, offerName,
 			); err != nil {
 				return err
 			}
-			// The row is locked and the stock was checked, so this always succeeds;
-			// "stock >= $1" is a second line of defence.
+		}
+
+		for _, b := range bundles {
+			var obID int64
+			if err := tx.QueryRowContext(ctx, `
+				INSERT INTO order_bundles (order_id, bundle_id, bundle_name, bundle_name_ar, quantity, unit_price, subtotal)
+				VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+				orderID, b.bundle.ID, b.bundle.Name, b.bundle.NameAr, b.Quantity, b.bundle.Price,
+				pricing.LineTotal(b.bundle.Price, b.Quantity)).Scan(&obID); err != nil {
+				return err
+			}
+			for _, c := range b.comps {
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO order_bundle_items (order_bundle_id, product_id, product_name, product_name_ar,
+					                                quantity, selected_color, selected_color_ar)
+					VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+					obID, c.ProductID, c.ProductName, c.ProductNameAr, c.Quantity, c.SelectedColor, c.SelectedColorAr,
+				); err != nil {
+					return err
+				}
+			}
+		}
+
+		// Reduce stock once per product with the combined quantity. The rows are
+		// locked and checked above; "stock >= $1" is a second line of defence.
+		for pid, n := range need {
 			res, err := tx.ExecContext(ctx, `
 				UPDATE products SET stock = stock - $1, updated_at = NOW()
-				WHERE id = $2 AND stock >= $1`, l.Quantity, l.ProductID)
+				WHERE id = $2 AND stock >= $1`, n, pid)
 			if err != nil {
 				return err
 			}
-			if n, _ := res.RowsAffected(); n != 1 {
-				return apperr.Conflict(fmt.Sprintf("%s: not enough stock", l.Name))
+			if k, _ := res.RowsAffected(); k != 1 {
+				return apperr.Conflict(fmt.Sprintf("%s: not enough stock", names[pid]))
+			}
+		}
+
+		if method == models.PaymentPayLater {
+			note := fmt.Sprintf("order #%d (pay later)", orderID)
+			if err := insertDebt(ctx, tx, userID, &orderID, models.DebtCharge, total, &note, nil); err != nil {
+				return err
 			}
 		}
 
 		if _, err := tx.ExecContext(ctx, `DELETE FROM cart_items WHERE cart_id = $1`, cartID); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM cart_bundles WHERE cart_id = $1`, cartID); err != nil {
+			return err
+		}
 		return touchCart(ctx, tx, cartID)
 	})
 	return orderID, err
+}
+
+// checkCredit fails unless balance + amount fits within the credit limit.
+func checkCredit(ctx context.Context, tx *sql.Tx, userID int64, amount decimal.Decimal) error {
+	var limit decimal.Decimal
+	if err := tx.QueryRowContext(ctx, `SELECT credit_limit FROM users WHERE id = $1`, userID).Scan(&limit); err != nil {
+		return err
+	}
+	if !limit.IsPositive() {
+		return apperr.Conflict("pay later is not available for your account; please contact the shop")
+	}
+	balance, err := debtBalance(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	available := limit.Sub(balance)
+	if amount.GreaterThan(available) {
+		if available.IsNegative() {
+			available = decimal.Zero
+		}
+		return apperr.Conflict(fmt.Sprintf("this order (%s) is more than your available credit (%s)",
+			amount.StringFixed(2), available.StringFixed(2)))
+	}
+	return nil
 }
 
 func checkoutAddress(ctx context.Context, tx *sql.Tx, userID int64, addressID *int64) (models.Address, error) {
@@ -164,7 +289,8 @@ func checkoutAddress(ctx context.Context, tx *sql.Tx, userID int64, addressID *i
 	return a, err
 }
 
-// loadItems fills Items for every order with ONE query (not one per order).
+// loadItems fills Items and Bundles for every order with a fixed number of
+// queries (not one per order).
 func loadItems(ctx context.Context, q database.Querier, orders []models.Order) error {
 	if len(orders) == 0 {
 		return nil
@@ -177,7 +303,7 @@ func loadItems(ctx context.Context, q database.Querier, orders []models.Order) e
 	}
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, order_id, product_id, product_name, product_name_ar, quantity,
-		       unit_price, selected_color, selected_color_ar, subtotal
+		       unit_price, selected_color, selected_color_ar, subtotal, offer_id, offer_name
 		FROM order_items
 		WHERE order_id = ANY($1)
 		ORDER BY order_id, id`, ids)
@@ -188,11 +314,46 @@ func loadItems(ctx context.Context, q database.Querier, orders []models.Order) e
 	for rows.Next() {
 		var it models.OrderItem
 		if err := rows.Scan(&it.ID, &it.OrderID, &it.ProductID, &it.ProductName, &it.ProductNameAr,
-			&it.Quantity, &it.UnitPrice, &it.SelectedColor, &it.SelectedColorAr, &it.Subtotal); err != nil {
+			&it.Quantity, &it.UnitPrice, &it.SelectedColor, &it.SelectedColorAr, &it.Subtotal,
+			&it.OfferID, &it.OfferName); err != nil {
 			return err
 		}
 		i := index[it.OrderID]
 		orders[i].Items = append(orders[i].Items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return loadOrderBundles(ctx, q, orders, ids, index)
+}
+
+func loadOrderBundles(ctx context.Context, q database.Querier, orders []models.Order, ids []int64, index map[int64]int) error {
+	rows, err := q.QueryContext(ctx, `
+		SELECT ob.id, ob.order_id, ob.bundle_id, ob.bundle_name, ob.bundle_name_ar, ob.quantity, ob.unit_price, ob.subtotal,
+		       obi.product_id, obi.product_name, obi.product_name_ar, obi.quantity, obi.selected_color, obi.selected_color_ar
+		FROM order_bundles ob
+		JOIN order_bundle_items obi ON obi.order_bundle_id = ob.id
+		WHERE ob.order_id = ANY($1)
+		ORDER BY ob.order_id, ob.id, obi.id`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b models.OrderBundle
+		var it models.OrderBundleItem
+		if err := rows.Scan(&b.ID, &b.OrderID, &b.BundleID, &b.BundleName, &b.BundleNameAr, &b.Quantity,
+			&b.UnitPrice, &b.Subtotal, &it.ProductID, &it.ProductName, &it.ProductNameAr, &it.Quantity,
+			&it.SelectedColor, &it.SelectedColorAr); err != nil {
+			return err
+		}
+		o := &orders[index[b.OrderID]]
+		if n := len(o.Bundles); n == 0 || o.Bundles[n-1].ID != b.ID {
+			b.Items = []models.OrderBundleItem{}
+			o.Bundles = append(o.Bundles, b)
+		}
+		last := &o.Bundles[len(o.Bundles)-1]
+		last.Items = append(last.Items, it)
 	}
 	return rows.Err()
 }
@@ -252,11 +413,14 @@ func (r *OrderRepository) Get(ctx context.Context, orderID int64) (models.Order,
 	return orders[0], nil
 }
 
-// List returns a page of all orders, optionally filtered by status (admin).
+// List returns a page of all orders, optionally filtered by status / payment method (admin).
 func (r *OrderRepository) List(ctx context.Context, f models.OrderFilter) (models.Page[models.Order], error) {
 	var w whereBuilder
 	if f.Status != "" {
 		w.add("o.status = ?::text", f.Status)
+	}
+	if f.PaymentMethod != "" {
+		w.add("o.payment_method = ?::text", f.PaymentMethod)
 	}
 	page := models.Page[models.Order]{Items: []models.Order{}, Limit: f.Limit, Offset: f.Offset}
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM orders o`+w.sql(), w.args...).Scan(&page.Total); err != nil {
@@ -284,49 +448,102 @@ func (r *OrderRepository) CancelByUser(ctx context.Context, userID, orderID int6
 		if status != models.OrderPending {
 			return apperr.Conflict(fmt.Sprintf("only pending orders can be cancelled (this order is %s)", status))
 		}
-		return setStatus(ctx, tx, orderID, models.OrderCancelled, "")
+		return setStatus(ctx, tx, orderID, userID, models.OrderCancelled, "")
 	})
 }
 
 // UpdateStatus moves an order along its life cycle (admin). Side effects:
-//   - cancelled -> stock is put back
-//   - delivered -> payment_status becomes "paid" (cash was collected) and the
-//     customer's existing reviews of these products become verified purchases
-func (r *OrderRepository) UpdateStatus(ctx context.Context, orderID int64, to string) error {
+//   - cancelled -> stock is put back (single items and bundle contents), and
+//     anything charged to the customer's debt for this order is reversed
+//   - delivered -> the customer's reviews of these products become verified,
+//     and the payment is settled:
+//   - pay_later orders stay "deferred" (the debt was charged at checkout)
+//   - cash orders become "paid", unless paymentCollected is false: then the
+//     amount is charged to the customer's debt and the payment is "deferred"
+func (r *OrderRepository) UpdateStatus(ctx context.Context, orderID int64, to string, paymentCollected *bool, adminID int64) error {
 	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
-		var from string
+		var from, method string
+		var userID int64
+		var total decimal.Decimal
 		if err := tx.QueryRowContext(ctx,
-			`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, orderID,
-		).Scan(&from); err != nil {
+			`SELECT status, payment_method, user_id, total_amount FROM orders WHERE id = $1 FOR UPDATE`, orderID,
+		).Scan(&from, &method, &userID, &total); err != nil {
 			return apperr.FromDB(err, "order not found")
 		}
 		if !models.CanTransitionOrder(from, to) {
 			return apperr.Conflict(fmt.Sprintf("cannot change order status from %s to %s", from, to))
 		}
+		if paymentCollected != nil && (to != models.OrderDelivered || method != models.PaymentCashOnDelivery) {
+			return apperr.Invalid("payment_collected is only used when a cash_on_delivery order is delivered")
+		}
+
 		payment := ""
 		if to == models.OrderDelivered {
-			payment = models.PaymentPaid
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE product_reviews r SET verified_purchase = TRUE
-				FROM order_items oi JOIN orders o ON o.id = oi.order_id
-				WHERE o.id = $1 AND r.user_id = o.user_id AND r.product_id = oi.product_id
-				  AND NOT r.verified_purchase`, orderID); err != nil {
+			if err := verifyReviews(ctx, tx, orderID); err != nil {
 				return err
 			}
+			switch {
+			case method == models.PaymentPayLater:
+				// already on the debt account since checkout
+			case paymentCollected != nil && !*paymentCollected:
+				// The admin decides to let the customer owe it; the credit limit
+				// only restricts customers' own pay-later checkouts.
+				if err := lockUser(ctx, tx, userID); err != nil {
+					return err
+				}
+				note := fmt.Sprintf("order #%d delivered, cash not collected", orderID)
+				if err := insertDebt(ctx, tx, userID, &orderID, models.DebtCharge, total, &note, &adminID); err != nil {
+					return err
+				}
+				payment = models.PaymentDeferred
+			default:
+				payment = models.PaymentPaid
+			}
 		}
-		return setStatus(ctx, tx, orderID, to, payment)
+		return setStatus(ctx, tx, orderID, userID, to, payment)
 	})
 }
 
-// setStatus writes the new status (restoring stock for cancellations).
-// payment == "" keeps the current payment status.
-func setStatus(ctx context.Context, tx *sql.Tx, orderID int64, status, payment string) error {
+// verifyReviews marks the customer's reviews of every product in the order -
+// single items and products inside bundles - as verified purchases.
+func verifyReviews(ctx context.Context, tx *sql.Tx, orderID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE product_reviews r SET verified_purchase = TRUE
+		FROM orders o
+		WHERE o.id = $1 AND r.user_id = o.user_id AND NOT r.verified_purchase
+		  AND r.product_id IN (
+			SELECT oi.product_id FROM order_items oi WHERE oi.order_id = o.id
+			UNION
+			SELECT obi.product_id FROM order_bundles ob
+			JOIN order_bundle_items obi ON obi.order_bundle_id = ob.id
+			WHERE ob.order_id = o.id)`, orderID)
+	return err
+}
+
+// setStatus writes the new status. Cancelling restores stock and reverses any
+// debt charged for the order. payment == "" keeps the current payment status.
+func setStatus(ctx context.Context, tx *sql.Tx, orderID, userID int64, status, payment string) error {
 	if status == models.OrderCancelled {
+		// One row per product: single items + (bundle qty x qty inside bundle).
 		// Products that were hard-deleted have product_id NULL and are skipped.
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE products p SET stock = p.stock + oi.quantity, updated_at = NOW()
-			FROM order_items oi
-			WHERE oi.order_id = $1 AND oi.product_id = p.id`, orderID); err != nil {
+			UPDATE products p SET stock = p.stock + x.qty, updated_at = NOW()
+			FROM (
+				SELECT product_id, SUM(qty) AS qty FROM (
+					SELECT oi.product_id, oi.quantity AS qty
+					FROM order_items oi WHERE oi.order_id = $1
+					UNION ALL
+					SELECT obi.product_id, obi.quantity * ob.quantity
+					FROM order_bundles ob JOIN order_bundle_items obi ON obi.order_bundle_id = ob.id
+					WHERE ob.order_id = $1
+				) parts
+				WHERE product_id IS NOT NULL
+				GROUP BY product_id
+			) x
+			WHERE p.id = x.product_id`, orderID); err != nil {
+			return err
+		}
+		if err := reverseOrderDebt(ctx, tx, userID, orderID); err != nil {
 			return err
 		}
 	}

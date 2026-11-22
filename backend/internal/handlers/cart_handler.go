@@ -76,3 +76,48 @@ func (h *CartHandler) Clear(w http.ResponseWriter, r *http.Request) error {
 	}
 	return httpx.JSON(w, http.StatusOK, cart)
 }
+
+// ---------- bundles ----------
+
+// AddBundle: POST /api/cart/bundles {bundle_id, quantity}
+func (h *CartHandler) AddBundle(w http.ResponseWriter, r *http.Request) error {
+	var req models.AddCartBundleRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	cart, err := h.carts.AddBundle(r.Context(), auth.UserID(r.Context()), req)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, cart)
+}
+
+// UpdateBundle: PUT /api/cart/bundles/{id} {quantity}
+func (h *CartHandler) UpdateBundle(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var req models.UpdateCartBundleRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	cart, err := h.carts.UpdateBundle(r.Context(), auth.UserID(r.Context()), id, req)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, cart)
+}
+
+// RemoveBundle: DELETE /api/cart/bundles/{id}
+func (h *CartHandler) RemoveBundle(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	cart, err := h.carts.RemoveBundle(r.Context(), auth.UserID(r.Context()), id)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, cart)
+}

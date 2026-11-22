@@ -22,10 +22,20 @@ const (
 	PaymentPending = "pending"
 	PaymentPaid    = "paid"
 	PaymentFailed  = "failed"
+	// PaymentDeferred: the amount was moved to the customer's debt account
+	// (pay-later orders, or cash orders delivered without collecting payment).
+	PaymentDeferred = "deferred"
 )
 
-// PaymentCashOnDelivery is the only method the schema allows.
-const PaymentCashOnDelivery = "cash_on_delivery"
+// Payment methods (check_payment_method).
+const (
+	PaymentCashOnDelivery = "cash_on_delivery"
+	PaymentPayLater       = "pay_later" // charged to the customer's debt account
+)
+
+func IsPaymentMethod(s string) bool {
+	return s == PaymentCashOnDelivery || s == PaymentPayLater
+}
 
 // orderTransitions is the order life cycle. An order can only move along these
 // arrows; delivered and cancelled are final.
@@ -74,6 +84,7 @@ type Order struct {
 	PaymentMethod          string          `json:"payment_method"`
 	PaymentStatus          string          `json:"payment_status"`
 	Items                  []OrderItem     `json:"items"`
+	Bundles                []OrderBundle   `json:"bundles"`
 	Customer               *OrderCustomer  `json:"customer,omitempty"` // admin views only
 	CreatedAt              time.Time       `json:"created_at"`
 	UpdatedAt              time.Time       `json:"updated_at"`
@@ -90,6 +101,8 @@ type OrderItem struct {
 	SelectedColor   *string         `json:"selected_color"`
 	SelectedColorAr *string         `json:"selected_color_ar"`
 	Subtotal        decimal.Decimal `json:"subtotal"`
+	OfferID         *int64          `json:"offer_id"`   // offer that set unit_price, if any
+	OfferName       *string         `json:"offer_name"` // snapshot of the offer name
 }
 
 type OrderCustomer struct {
@@ -99,16 +112,24 @@ type OrderCustomer struct {
 }
 
 // CreateOrderRequest: if AddressID is omitted, the default address is used.
+// PaymentMethod defaults to cash_on_delivery; pay_later charges the order to
+// the customer's debt account (needs a credit limit set by an admin).
 type CreateOrderRequest struct {
-	AddressID *int64 `json:"address_id"`
+	AddressID     *int64 `json:"address_id"`
+	PaymentMethod string `json:"payment_method"`
 }
 
+// UpdateOrderStatusRequest: PaymentCollected only matters when a cash order is
+// marked delivered. true/omitted = the cash was collected (payment "paid");
+// false = the customer did not pay, so the amount is moved to their debt.
 type UpdateOrderStatusRequest struct {
-	Status string `json:"status"`
+	Status           string `json:"status"`
+	PaymentCollected *bool  `json:"payment_collected"`
 }
 
 type OrderFilter struct {
-	Status string
-	Limit  int
-	Offset int
+	Status        string
+	PaymentMethod string
+	Limit         int
+	Offset        int
 }

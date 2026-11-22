@@ -71,13 +71,18 @@ func (r *ReviewRepository) Get(ctx context.Context, reviewID int64) (models.Revi
 }
 
 // HasDeliveredPurchase is true when the user has a delivered order containing
-// the product. It decides the "verified purchase" badge.
+// the product, on its own or inside a bundle. It decides the "verified purchase" badge.
 func (r *ReviewRepository) HasDeliveredPurchase(ctx context.Context, userID, productID int64) (bool, error) {
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM orders o JOIN order_items oi ON oi.order_id = o.id
-			WHERE o.user_id = $1 AND oi.product_id = $2 AND o.status = 'delivered')`,
+			WHERE o.user_id = $1 AND oi.product_id = $2 AND o.status = 'delivered'
+		) OR EXISTS (
+			SELECT 1 FROM orders o
+			JOIN order_bundles ob ON ob.order_id = o.id
+			JOIN order_bundle_items obi ON obi.order_bundle_id = ob.id
+			WHERE o.user_id = $1 AND obi.product_id = $2 AND o.status = 'delivered')`,
 		userID, productID).Scan(&ok)
 	return ok, err
 }

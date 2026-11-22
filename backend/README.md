@@ -2,9 +2,11 @@
 
 REST API for the StockWise shop: accounts, a bilingual (English/Arabic) product
 catalog, cart, favorites, addresses, cash-on-delivery checkout, order tracking,
-reviews with helpful votes, and a waiting list for out-of-stock products.
+reviews with helpful votes, a waiting list for out-of-stock products, timed
+**offers**, product **bundles**, and **pay-later customer debts**.
 
-For how the code is organised and why, read [docs/architecture.md](docs/architecture.md).
+- How the code is organised and why: [docs/architecture.md](docs/architecture.md)
+- Offers, bundles and debts in detail: [docs/offers-bundles-debts.md](docs/offers-bundles-debts.md)
 
 ## Requirements
 
@@ -13,23 +15,26 @@ For how the code is organised and why, read [docs/architecture.md](docs/architec
 
 ## Setup
 
-1. Create an empty database and apply the schema:
-
-   ```powershell
-   psql -U postgres -c "CREATE DATABASE ecommerce"
-   psql -U postgres -d ecommerce -f migrations/000001_baseline.up.sql
-   ```
-
-   Only run the migration on a **new, empty** database.
+1. Create an empty PostgreSQL database (e.g. `ecommerce`).
 2. Copy `.env.example` to `.env` and fill it in. `JWT_SECRET` must be at least
    32 characters; the server refuses to start otherwise.
-3. Run the API:
+3. Apply the schema with the built-in migration tool (no `psql` needed):
+
+   ```powershell
+   go run ./cmd/migrate status   # read-only: what is applied / pending
+   go run ./cmd/migrate up       # apply pending migrations
+   ```
+
+   It records applied migrations in `schema_migrations`. A database whose
+   baseline was applied by hand earlier is recognised, so only newer
+   migrations run. **Run `up` after every pull that adds a migration.**
+4. Run the API:
 
    ```powershell
    go run ./cmd/api
    ```
 
-4. Check `GET http://localhost:8080/api/health` → `{"database":"ok","status":"ok"}`.
+5. Check `GET http://localhost:8080/api/health` → `{"database":"ok","status":"ok"}`.
 
 ### Creating the first admin
 
@@ -93,7 +98,7 @@ Access: **P** public · **U** logged-in user · **A** admin.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET | `/api/products` | P | `?category= &search= &sort=newest\|price_asc\|price_desc\|name &in_stock=true &limit= &offset=` |
+| GET | `/api/products` | P | `?category= &search= &sort=newest\|price_asc\|price_desc\|name &in_stock=true &on_offer=true &limit= &offset=`; `final_price` and price sorting include live offers |
 | GET | `/api/products/{id}` | P | Includes `images` and `colors` |
 | GET | `/api/products/{id}/images` | P | |
 | GET | `/api/products/{id}/colors` | P | |
@@ -113,11 +118,14 @@ Access: **P** public · **U** logged-in user · **A** admin.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET | `/api/cart` | U | Live prices, `line_total`, `is_available`, `unavailable_reason`, `subtotal` |
+| GET | `/api/cart` | U | `items` (single products, with `offer`) and `bundles`; live prices, `line_total`, `is_available`, `unavailable_reason`, `subtotal` |
 | POST | `/api/cart/items` | U | `product_id, quantity (default 1), selected_color` (required if the product has colors) |
 | PUT | `/api/cart/items/{id}` | U | `quantity, selected_color?` |
 | DELETE | `/api/cart/items/{id}` | U | |
-| DELETE | `/api/cart` | U | Empty the cart |
+| DELETE | `/api/cart` | U | Empty the cart (products and bundles) |
+| POST | `/api/cart/bundles` | U | `bundle_id, quantity (default 1)` |
+| PUT | `/api/cart/bundles/{id}` | U | `quantity` |
+| DELETE | `/api/cart/bundles/{id}` | U | |
 | GET | `/api/favorites` | U | Each favorite embeds the product |
 | POST | `/api/favorites` | U | `product_id` → 201 new / 200 already saved |
 | DELETE | `/api/favorites/{product_id}` | U | |
@@ -130,23 +138,25 @@ Access: **P** public · **U** logged-in user · **A** admin.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/api/orders` | U | `{address_id?}` - uses the default address if omitted. Checks out the whole cart |
+| POST | `/api/orders` | U | `{address_id?, payment_method?}` - default address if omitted; `payment_method` = `cash_on_delivery` (default) or `pay_later`. Checks out the whole cart, bundles included |
 | GET | `/api/orders` | U | Own orders with items |
 | GET | `/api/orders/{id}` | U | |
 | POST | `/api/orders/{id}/cancel` | U | Only while `pending`; stock is restored |
-| GET | `/api/admin/orders` | A | `?status= &limit= &offset=`, includes customer |
+| GET | `/api/admin/orders` | A | `?status= &payment_method= &limit= &offset=`, includes customer |
 | GET | `/api/admin/orders/{id}` | A | |
-| PUT | `/api/admin/orders/{id}/status` | A | `{status}` - see the life cycle below |
+| PUT | `/api/admin/orders/{id}/status` | A | `{status, payment_collected?}` - see the life cycle below |
 
 Order life cycle (anything else is refused with 409):
 
 ```
 pending → confirmed → processing → shipped → delivered
-   └──────────┴────────────┴──→ cancelled   (stock is put back)
+   └──────────┴────────────┴──→ cancelled   (stock is put back, debt reversed)
 ```
 
-Delivering an order sets `payment_status` to `paid` (cash collected) and marks
-the customer's reviews of those products as verified purchases.
+Delivering an order marks the customer's reviews of its products (including
+products inside bundles) as verified purchases, and settles the payment:
+cash orders become `paid`, or `deferred` (moved to the customer's debt) when
+sent with `payment_collected: false`; pay-later orders stay `deferred`.
 
 ### Reviews
 
@@ -172,9 +182,48 @@ the customer's reviews of those products as verified purchases.
 Marking a request `notified` records `notified_at`; it does not send an email
 or SMS - that needs a notification provider.
 
+### Offers
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/api/offers` | P | Live offers |
+| GET | `/api/offers/{id}` | P | `{offer, products}` - a live offer and the products it covers |
+| GET | `/api/admin/offers` | A | `?status=live\|scheduled\|expired\|disabled` |
+| GET | `/api/admin/offers/{id}` | A | |
+| POST | `/api/admin/offers` | A | `name, name_ar, description?, description_ar?, discount_type (percentage\|fixed), discount_value, scope (products\|category), product_ids \| category, starts_at, ends_at, is_active?` |
+| PUT | `/api/admin/offers/{id}` | A | Same body |
+| DELETE | `/api/admin/offers/{id}` | A | Orders keep the offer name |
+
+The customer always gets the single best price (product discount or one
+offer); discounts never stack.
+
+### Bundles
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/api/bundles` | P | Live bundles with `items`, `original_total`, `savings`, `available_stock` |
+| GET | `/api/bundles/{id}` | P | |
+| GET | `/api/admin/bundles` | A | Including inactive / outside their window |
+| GET | `/api/admin/bundles/{id}` | A | |
+| POST | `/api/admin/bundles` | A | `name, name_ar, description?, description_ar?, image_url?, price, starts_at?, ends_at?, is_active?, items: [{product_id, quantity, selected_color?}]` |
+| PUT | `/api/admin/bundles/{id}` | A | Same body (replaces the items) |
+| DELETE | `/api/admin/bundles/{id}` | A | Soft delete |
+
+### Customer debts (pay later)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/api/debt` | U | `{account, transactions}` - my balance, credit and history |
+| GET | `/api/admin/debts` | A | `?outstanding=true`; biggest balance first |
+| GET | `/api/admin/customers/{id}/debt` | A | One customer's statement |
+| PUT | `/api/admin/customers/{id}/credit-limit` | A | `{credit_limit}` (0 = pay later off) |
+| POST | `/api/admin/customers/{id}/debt/payments` | A | `{amount, note?, order_id?}` |
+| POST | `/api/admin/customers/{id}/debt/adjustments` | A | `{amount (+/-), note, order_id?}` |
+
 ## Not included yet
 
-- Online payments (the schema only allows cash on delivery)
+- Coupon codes typed at checkout (offers are automatic only)
+- Online payments (cash on delivery and pay later only)
 - Image upload (the API stores image URLs)
 - Email/SMS sending (password reset, waiting-list notifications)
 - Logging out other devices after a password change: tokens stay valid until

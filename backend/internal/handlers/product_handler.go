@@ -20,7 +20,7 @@ func NewProductHandler(products *services.ProductService) *ProductHandler {
 	return &ProductHandler{products: products}
 }
 
-// parseProductFilter reads ?category= &search= &sort= &in_stock=true &limit= &offset=
+// parseProductFilter reads ?category= &search= &sort= &in_stock=true &on_offer=true &limit= &offset=
 func parseProductFilter(r *http.Request) (models.ProductFilter, error) {
 	q := r.URL.Query()
 	limit, offset, err := httpx.Pagination(r)
@@ -32,6 +32,7 @@ func parseProductFilter(r *http.Request) (models.ProductFilter, error) {
 		Search:      strings.TrimSpace(q.Get("search")),
 		Sort:        strings.TrimSpace(q.Get("sort")),
 		InStockOnly: q.Get("in_stock") == "true",
+		OnOfferOnly: q.Get("on_offer") == "true",
 		Limit:       limit,
 		Offset:      offset,
 	}

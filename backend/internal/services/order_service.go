@@ -19,11 +19,20 @@ func NewOrderService(orders *repository.OrderRepository) *OrderService {
 }
 
 // Checkout places an order from the cart and returns the created order.
+// payment_method: cash_on_delivery (default) or pay_later (charged to the
+// customer's debt account, within the credit limit an admin set).
 func (s *OrderService) Checkout(ctx context.Context, userID int64, req models.CreateOrderRequest) (models.Order, error) {
 	if req.AddressID != nil && *req.AddressID <= 0 {
 		return models.Order{}, validators.FieldError("address_id", "must be a positive number")
 	}
-	id, err := s.orders.Checkout(ctx, userID, req.AddressID)
+	method := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
+	if method == "" {
+		method = models.PaymentCashOnDelivery
+	}
+	if !models.IsPaymentMethod(method) {
+		return models.Order{}, validators.FieldError("payment_method", "must be cash_on_delivery or pay_later")
+	}
+	id, err := s.orders.Checkout(ctx, userID, req.AddressID, method)
 	if err != nil {
 		return models.Order{}, err
 	}
@@ -52,6 +61,10 @@ func (s *OrderService) List(ctx context.Context, f models.OrderFilter) (models.P
 	if f.Status != "" && !models.IsOrderStatus(f.Status) {
 		return models.Page[models.Order]{}, validators.FieldError("status", "is not a valid order status")
 	}
+	f.PaymentMethod = strings.TrimSpace(f.PaymentMethod)
+	if f.PaymentMethod != "" && !models.IsPaymentMethod(f.PaymentMethod) {
+		return models.Page[models.Order]{}, validators.FieldError("payment_method", "must be cash_on_delivery or pay_later")
+	}
 	return s.orders.List(ctx, f)
 }
 
@@ -59,7 +72,10 @@ func (s *OrderService) Get(ctx context.Context, orderID int64) (models.Order, er
 	return s.orders.Get(ctx, orderID)
 }
 
-func (s *OrderService) UpdateStatus(ctx context.Context, orderID int64, status string) (models.Order, error) {
+// UpdateStatus moves an order forward. paymentCollected is only for delivering
+// cash orders: false moves the unpaid amount to the customer's debt.
+func (s *OrderService) UpdateStatus(ctx context.Context, adminID, orderID int64, req models.UpdateOrderStatusRequest) (models.Order, error) {
+	status := req.Status
 	status = strings.ToLower(strings.TrimSpace(status))
 	if !models.IsOrderStatus(status) {
 		return models.Order{}, validators.FieldError("status",
@@ -68,7 +84,7 @@ func (s *OrderService) UpdateStatus(ctx context.Context, orderID int64, status s
 	if status == models.OrderPending {
 		return models.Order{}, apperr.Conflict("an order cannot be moved back to pending")
 	}
-	if err := s.orders.UpdateStatus(ctx, orderID, status); err != nil {
+	if err := s.orders.UpdateStatus(ctx, orderID, status, req.PaymentCollected, adminID); err != nil {
 		return models.Order{}, err
 	}
 	return s.orders.Get(ctx, orderID)

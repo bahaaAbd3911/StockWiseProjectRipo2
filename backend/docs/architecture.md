@@ -36,6 +36,13 @@ Loads `.env` → `config.Load()` → `database.Connect()` → `routes.New()` →
 starts the HTTP server with timeouts → waits for Ctrl+C/SIGTERM → graceful
 shutdown (running requests get 10 s to finish).
 
+### `cmd/migrate/main.go` + `internal/migrate/` - schema migrations
+`go run ./cmd/migrate status|up` applies `migrations/NNNNNN_name.up.sql` in
+order, each in its own transaction, and records them in `schema_migrations`.
+A database whose baseline was applied by hand is detected and only newer
+migrations run. `status` is read-only. The integration tests build their
+throwaway database with the same code.
+
 ### `internal/config/` - settings
 `config.go` reads `APP_PORT`, `DATABASE_URL`, `JWT_SECRET`, `JWT_TTL` and
 `CORS_ALLOWED_ORIGINS` once, applies defaults, and **refuses to start** if the
@@ -105,14 +112,19 @@ file shows every endpoint and who may call it.
 | `order.go` | `Order`, `OrderItem`, statuses, and **`CanTransitionOrder`**, the order life-cycle rule |
 | `review.go` | `Review` (reviewer shown as "First L."), `ReviewInput` |
 | `waiting_list.go` | `WaitingListItem`, statuses, `CanTransitionWaiting` |
+| `offer.go` | `Offer`, `OfferInput`, `AppliedOffer` (the badge shown on a price), statuses |
+| `bundle.go` | `Bundle`, `BundleItem`, `CartBundle`, `OrderBundle` and their inputs |
+| `debt.go` | `DebtAccount`, `DebtTransaction`, `DebtStatement`, transaction types |
 
 Money is `decimal.Decimal` everywhere, never `float64`, to match
 `numeric(10,2)` exactly.
 
 ### `internal/pricing/pricing.go` - the money math
-`DiscountedPrice(price, percent)` and `LineTotal(unit, qty)`. This is the
-**only** place a discount is applied, so the product page, cart and checkout
-always show the same number.
+`DiscountedPrice(price, percent)`, `OfferPrice(price, type, value)`,
+`BestPrice(price, discount, offers)` and `LineTotal(unit, qty)`. `BestPrice`
+picks the single lowest price among the product's own discount and its live
+offers (no stacking). This is the **only** place prices are decided, so the
+product page, favorites, cart and checkout always show the same number.
 
 ### `internal/validators/` - input checks
 - `validator.go`: the `Checker` collects every field problem at once; there are
@@ -122,6 +134,7 @@ always show the same number.
 - `rules.go`: one `Validate...` function per request. Each one first
   **normalises** the input (trims spaces, lower-cases emails, turns `""` into
   NULL) and then checks it against the schema limits.
+- `features.go`: offers, bundles, credit limits, debt payments and adjustments.
 
 ### `internal/services/` - business rules
 | File | What it decides |
@@ -134,6 +147,9 @@ always show the same number.
 | `order_service.go` | Checkout, customer cancel, admin status changes (status must be valid; nothing goes back to `pending`) |
 | `review_service.go` | Product must be active; `verified_purchase` is decided by the server |
 | `waiting_list_service.go` | Join, cancel, admin status |
+| `offer_service.go` | Offer CRUD, public live list, products covered by an offer |
+| `bundle_service.go` | Bundle CRUD and listing |
+| `debt_service.go` | Statements, credit limits, payments, adjustments |
 
 ### `internal/repository/` - SQL
 | File | Highlights |
@@ -148,22 +164,31 @@ always show the same number.
 | `order_repository.go` | **Checkout transaction**, items loaded in one query, cancel/status changes with stock restore |
 | `review_repository.go` | One review per product, helpful vote and counter in one transaction |
 | `waiting_list_repository.go` | Advisory lock against duplicates, status transitions, `notified_at` |
+| `offer_repository.go` | `offerAppliesSQL` (the one SQL definition of "this offer applies now"), `loadLiveOffers` / `attachOffers`, offer CRUD |
+| `bundle_repository.go` | Bundle CRUD, live components, `bundleProblem` (availability rule), available stock |
+| `cart_bundle_repository.go` | Bundles in the cart |
+| `debt_repository.go` | Ledger helpers (balance, charge, reversal), accounts with running balance, payments, adjustments |
 
 ## 3. The important flows
 
 ### Checkout (`OrderRepository.Checkout`)
 Everything runs in **one transaction**:
 1. Load the address. It must belong to the user; if none is given, the default is used.
-2. Lock the cart row, so the same user cannot check out twice at once.
-3. Load the cart lines and **lock the product rows** in product-id order, so
-   two customers cannot both buy the last unit and the locks cannot deadlock.
-4. Check every line with `cartLine.problem()`: active? enough stock? does the
-   color still exist? Report **all** problems in one 409 response.
-5. Compute `unit_price = price × (100 − discount) / 100` (rounded to cents) and
-   `subtotal = unit_price × qty`, exactly.
-6. Insert the order with a **copy** of the address.
-7. Insert the items with **copies** of name/price/color, and reduce stock.
-8. Empty the cart and commit.
+2. Pay later only: lock the user row, so two checkouts cannot spend the same credit.
+3. Lock the cart row, so the same user cannot check out twice at once.
+4. **Lock every product the cart needs** (single items and the products inside
+   bundles) in one statement in id order, so two customers cannot both buy the
+   last unit and the locks cannot deadlock.
+5. Check every line: `cartLine.problem()` for products, `bundleProblem()` for
+   bundles, then the **combined** quantity per product. Report **all** problems
+   in one 409 response.
+6. Prices: `pricing.BestPrice` for products (discount or live offer), the
+   bundle price for bundles; `subtotal = unit_price × qty`, exactly.
+7. Pay later only: balance + total must fit within the credit limit.
+8. Insert the order with a **copy** of the address, the items with copies of
+   name/price/color/offer, the bundles with copies of their products; reduce
+   stock once per product; add a `charge` to the debt ledger for pay later.
+9. Empty the cart (items and bundles) and commit.
 
 If anything fails, nothing is saved. The integration test
 `TestLastUnitCanOnlyBeSoldOnce` fires two checkouts at the same time for a
@@ -172,9 +197,15 @@ product with stock 1 and checks that exactly one succeeds.
 ### Order life cycle
 `models.CanTransitionOrder` is the single source of truth:
 `pending → confirmed → processing → shipped → delivered`, plus cancellation
-from the first three. Cancelling puts the stock back. Delivering sets
-`payment_status = paid` and upgrades the customer's reviews of those products to
-verified purchases.
+from the first three. Cancelling puts the stock back (bundle contents
+included) and reverses any debt charged for the order. Delivering upgrades the
+customer's reviews of those products to verified purchases and settles the
+payment: cash orders become `paid` (or `deferred` + a debt charge when the admin
+sends `payment_collected: false`); pay-later orders stay `deferred`.
+
+### Offers, bundles and debts
+Explained in full - rules, tables, endpoints, examples - in
+[offers-bundles-debts.md](offers-bundles-debts.md).
 
 ### Authentication on every protected request
 Token → signature/expiry check → database lookup (`is_active`, `role`) →

@@ -40,6 +40,7 @@ type cartLine struct {
 	ColorHex        *string
 	ColorCount      int
 	AddedAt         time.Time
+	Offers          []models.AppliedOffer // live offers for this product
 }
 
 // cartLinesSQL selects the lines of one cart ($1). Checkout passes a lock clause.
@@ -75,7 +76,21 @@ func loadCartLines(ctx context.Context, q database.Querier, cartID int64, orderB
 		}
 		lines = append(lines, l)
 	}
-	return lines, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(lines))
+	for i, l := range lines {
+		ids[i] = l.ProductID
+	}
+	offers, err := loadLiveOffers(ctx, q, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range lines {
+		lines[i].Offers = offers[lines[i].ProductID]
+	}
+	return lines, nil
 }
 
 // problem returns "" when the line can be bought, otherwise the reason.
@@ -96,7 +111,11 @@ func (l cartLine) problem() string {
 	return ""
 }
 
-func (l cartLine) unitPrice() decimal.Decimal { return pricing.DiscountedPrice(l.Price, l.Discount) }
+// unitPrice is the best price right now (product discount or a live offer),
+// and the offer that produced it, if any.
+func (l cartLine) unitPrice() (decimal.Decimal, *models.AppliedOffer) {
+	return pricing.BestPrice(l.Price, l.Discount, l.Offers)
+}
 
 // ensureCart returns the user's cart, creating it on first use.
 func ensureCart(ctx context.Context, q database.Querier, userID int64) (int64, time.Time, error) {
@@ -130,13 +149,14 @@ func (r *CartRepository) Get(ctx context.Context, userID int64) (models.Cart, er
 		return models.Cart{}, err
 	}
 
-	cart := models.Cart{ID: cartID, Items: []models.CartItem{}, Subtotal: decimal.Zero, UpdatedAt: updated}
+	cart := models.Cart{ID: cartID, Items: []models.CartItem{}, Bundles: []models.CartBundle{},
+		Subtotal: decimal.Zero, UpdatedAt: updated}
 	for _, l := range lines {
-		unit := l.unitPrice()
+		unit, offer := l.unitPrice()
 		item := models.CartItem{
 			ID: l.ItemID, ProductID: l.ProductID, ProductName: l.Name, ProductNameAr: l.NameAr,
 			PrimaryImageURL: l.PrimaryImageURL,
-			OriginalPrice:   l.Price, DiscountValue: l.Discount, UnitPrice: unit,
+			OriginalPrice:   l.Price, DiscountValue: l.Discount, UnitPrice: unit, Offer: offer,
 			Quantity: l.Quantity, LineTotal: pricing.LineTotal(unit, l.Quantity),
 			SelectedColor: l.Color, SelectedColorAr: l.ColorAr, SelectedColorHex: l.ColorHex,
 			Stock: l.Stock, AddedAt: l.AddedAt,
@@ -150,6 +170,21 @@ func (r *CartRepository) Get(ctx context.Context, userID int64) (models.Cart, er
 			cart.Subtotal = cart.Subtotal.Add(item.LineTotal)
 		}
 		cart.Items = append(cart.Items, item)
+	}
+
+	bundles, err := loadCartBundleLines(ctx, r.db, cartID)
+	if err != nil {
+		return models.Cart{}, err
+	}
+	for _, b := range bundles {
+		cb := b.toModel()
+		cart.ItemCount += b.Quantity
+		if cb.IsAvailable {
+			cart.Subtotal = cart.Subtotal.Add(cb.LineTotal)
+		} else {
+			cart.HasUnavailableItems = true
+		}
+		cart.Bundles = append(cart.Bundles, cb)
 	}
 	return cart, nil
 }
@@ -271,11 +306,19 @@ func (r *CartRepository) RemoveItem(ctx context.Context, userID, itemID int64) e
 	return expectOneRow(res, err, "cart item not found")
 }
 
+// Clear empties the cart: single products and bundles.
 func (r *CartRepository) Clear(ctx context.Context, userID int64) error {
-	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM cart_items ci USING carts c
-		WHERE ci.cart_id = c.id AND c.user_id = $1`, userID)
-	return err
+	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM cart_items ci USING carts c
+			WHERE ci.cart_id = c.id AND c.user_id = $1`, userID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM cart_bundles cb USING carts c
+			WHERE cb.cart_id = c.id AND c.user_id = $1`, userID)
+		return err
+	})
 }
 
 func sameString(a, b *string) bool {

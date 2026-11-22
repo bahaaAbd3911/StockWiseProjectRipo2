@@ -1,0 +1,72 @@
+package services
+
+import (
+	"context"
+
+	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/repository"
+	"ecommerce-backend/internal/validators"
+)
+
+// DebtService: customer credit limits and the debt ledger.
+//
+// How debt comes into existence:
+//   - a customer checks out with payment_method=pay_later   -> "charge"
+//   - an admin delivers a cash order with payment_collected=false -> "charge"
+//
+// How it goes away:
+//   - an admin records money received   -> "payment"
+//   - a charged order is cancelled      -> "reversal" (automatic)
+//   - an admin corrects a mistake       -> "adjustment" (+ or -, note required)
+type DebtService struct {
+	debts *repository.DebtRepository
+}
+
+func NewDebtService(debts *repository.DebtRepository) *DebtService { return &DebtService{debts: debts} }
+
+// Statement returns the account summary and a page of its ledger.
+func (s *DebtService) Statement(ctx context.Context, userID int64, limit, offset int) (models.DebtStatement, error) {
+	acc, err := s.debts.Account(ctx, userID)
+	if err != nil {
+		return models.DebtStatement{}, err
+	}
+	txs, err := s.debts.Transactions(ctx, userID, limit, offset)
+	if err != nil {
+		return models.DebtStatement{}, err
+	}
+	return models.DebtStatement{Account: acc, Transactions: txs}, nil
+}
+
+func (s *DebtService) ListAccounts(ctx context.Context, f models.DebtAccountFilter) (models.Page[models.DebtAccount], error) {
+	return s.debts.ListAccounts(ctx, f)
+}
+
+func (s *DebtService) SetCreditLimit(ctx context.Context, userID int64, req models.SetCreditLimitRequest) (models.DebtAccount, error) {
+	if err := validators.ValidateCreditLimit(&req); err != nil {
+		return models.DebtAccount{}, err
+	}
+	if err := s.debts.SetCreditLimit(ctx, userID, req.CreditLimit); err != nil {
+		return models.DebtAccount{}, err
+	}
+	return s.debts.Account(ctx, userID)
+}
+
+func (s *DebtService) RecordPayment(ctx context.Context, adminID, userID int64, req models.RecordPaymentRequest) (models.DebtStatement, error) {
+	if err := validators.ValidatePayment(&req); err != nil {
+		return models.DebtStatement{}, err
+	}
+	if err := s.debts.RecordPayment(ctx, adminID, userID, req); err != nil {
+		return models.DebtStatement{}, err
+	}
+	return s.Statement(ctx, userID, 20, 0)
+}
+
+func (s *DebtService) RecordAdjustment(ctx context.Context, adminID, userID int64, req models.RecordAdjustmentRequest) (models.DebtStatement, error) {
+	if err := validators.ValidateAdjustment(&req); err != nil {
+		return models.DebtStatement{}, err
+	}
+	if err := s.debts.RecordAdjustment(ctx, adminID, userID, req); err != nil {
+		return models.DebtStatement{}, err
+	}
+	return s.Statement(ctx, userID, 20, 0)
+}

@@ -3,6 +3,7 @@ package validators
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/models"
@@ -103,5 +104,67 @@ func TestValidateColorAndAddress(t *testing.T) {
 	}
 	if addr.BuildingNumber != nil {
 		t.Error("blank optional field should become nil (NULL)")
+	}
+}
+
+func TestValidateOffer(t *testing.T) {
+	start := time.Now()
+	valid := func() models.OfferInput {
+		return models.OfferInput{Name: "Eid", NameAr: "عيد", DiscountType: models.OfferPercentage,
+			DiscountValue: decimal.RequireFromString("20"), Scope: models.OfferScopeProducts,
+			ProductIDs: []int64{3, 1, 3}, StartsAt: start, EndsAt: start.Add(time.Hour)}
+	}
+	in := valid()
+	if err := ValidateOffer(&in); err != nil {
+		t.Fatalf("valid offer rejected: %v", err)
+	}
+	if len(in.ProductIDs) != 2 {
+		t.Errorf("duplicate product IDs should be removed: %v", in.ProductIDs)
+	}
+	cat := "Phones"
+	cases := map[string]func(*models.OfferInput){
+		"discount_value": func(o *models.OfferInput) { o.DiscountValue = decimal.RequireFromString("120") },
+		"discount_type":  func(o *models.OfferInput) { o.DiscountType = "bogo" },
+		"product_ids":    func(o *models.OfferInput) { o.ProductIDs = nil },
+		"category":       func(o *models.OfferInput) { o.Category = &cat }, // category with products scope
+		"ends_at":        func(o *models.OfferInput) { o.EndsAt = o.StartsAt.Add(-time.Minute) },
+	}
+	for field, mutate := range cases {
+		o := valid()
+		mutate(&o)
+		if fields(t, ValidateOffer(&o))[field] == "" {
+			t.Errorf("expected an error for %s", field)
+		}
+	}
+}
+
+func TestValidateBundle(t *testing.T) {
+	in := models.BundleInput{Name: "Set", NameAr: "طقم", Price: decimal.RequireFromString("10"),
+		Items: []models.BundleItemInput{{ProductID: 1, Quantity: 3}}}
+	if err := ValidateBundle(&in); err != nil {
+		t.Fatalf("one product x3 is a valid bundle: %v", err)
+	}
+	in.Items = []models.BundleItemInput{{ProductID: 1, Quantity: 1}}
+	if fields(t, ValidateBundle(&in))["items"] == "" {
+		t.Error("a single product x1 is not a bundle")
+	}
+	in.Items = []models.BundleItemInput{{ProductID: 1, Quantity: 1}, {ProductID: 1, Quantity: 2}}
+	if fields(t, ValidateBundle(&in))["items"] == "" {
+		t.Error("the same product twice must be rejected")
+	}
+}
+
+func TestValidateDebtRequests(t *testing.T) {
+	pay := models.RecordPaymentRequest{Amount: decimal.RequireFromString("-5")}
+	if fields(t, ValidatePayment(&pay))["amount"] == "" {
+		t.Error("negative payment accepted")
+	}
+	adj := models.RecordAdjustmentRequest{Amount: decimal.RequireFromString("-5"), Note: "  "}
+	if fields(t, ValidateAdjustment(&adj))["note"] == "" {
+		t.Error("adjustment without a note accepted")
+	}
+	adj.Note = "returned item"
+	if err := ValidateAdjustment(&adj); err != nil {
+		t.Errorf("negative adjustment with a note is valid: %v", err)
 	}
 }

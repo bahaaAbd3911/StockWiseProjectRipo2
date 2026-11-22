@@ -56,3 +56,37 @@ func (s *CartService) Clear(ctx context.Context, userID int64) (models.Cart, err
 	}
 	return s.carts.Get(ctx, userID)
 }
+
+// ---------- bundles in the cart ----------
+
+func (s *CartService) AddBundle(ctx context.Context, userID int64, req models.AddCartBundleRequest) (models.Cart, error) {
+	if req.Quantity == 0 {
+		req.Quantity = 1
+	}
+	if err := validators.ValidateAddCartBundle(&req); err != nil {
+		return models.Cart{}, err
+	}
+	if err := s.carts.AddBundle(ctx, userID, req); err != nil {
+		return models.Cart{}, err
+	}
+	return s.carts.Get(ctx, userID)
+}
+
+func (s *CartService) UpdateBundle(ctx context.Context, userID, lineID int64, req models.UpdateCartBundleRequest) (models.Cart, error) {
+	c := validators.New()
+	validators.ValidateQuantity(c, req.Quantity)
+	if err := c.Err(); err != nil {
+		return models.Cart{}, err
+	}
+	if err := s.carts.UpdateBundle(ctx, userID, lineID, req.Quantity); err != nil {
+		return models.Cart{}, err
+	}
+	return s.carts.Get(ctx, userID)
+}
+
+func (s *CartService) RemoveBundle(ctx context.Context, userID, lineID int64) (models.Cart, error) {
+	if err := s.carts.RemoveBundle(ctx, userID, lineID); err != nil {
+		return models.Cart{}, err
+	}
+	return s.carts.Get(ctx, userID)
+}

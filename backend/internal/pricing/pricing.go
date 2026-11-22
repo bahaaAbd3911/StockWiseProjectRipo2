@@ -5,7 +5,11 @@
 // matching PostgreSQL's numeric(10,2) columns.
 package pricing
 
-import "github.com/shopspring/decimal"
+import (
+	"ecommerce-backend/internal/models"
+
+	"github.com/shopspring/decimal"
+)
 
 var hundred = decimal.NewFromInt(100)
 
@@ -28,4 +32,38 @@ func DiscountedPrice(price, discountPercent decimal.Decimal) decimal.Decimal {
 // order_items.subtotal = quantity * unit_price.
 func LineTotal(unitPrice decimal.Decimal, quantity int) decimal.Decimal {
 	return unitPrice.Mul(decimal.NewFromInt(int64(quantity)))
+}
+
+// OfferPrice is the price after one offer:
+//
+//	percentage: price * (100 - value) / 100   (same rounding as DiscountedPrice)
+//	fixed:      price - value, never below 0
+func OfferPrice(price decimal.Decimal, discountType string, value decimal.Decimal) decimal.Decimal {
+	if discountType == models.OfferPercentage {
+		return DiscountedPrice(price, value)
+	}
+	p := price.Sub(value)
+	if p.IsNegative() {
+		p = decimal.Zero
+	}
+	return p.Round(2)
+}
+
+// BestPrice returns the lowest price a customer can get for a product right
+// now: the product's own discount, or the best of its live offers. Discounts
+// never stack - only the single best one is used. When an offer wins, it is
+// returned so it can be shown ("Eid sale, ends Friday") and saved on the order.
+// On a tie the product's own discount wins (no offer label).
+func BestPrice(price, productDiscount decimal.Decimal, offers []models.AppliedOffer) (decimal.Decimal, *models.AppliedOffer) {
+	best := DiscountedPrice(price, productDiscount)
+	var applied *models.AppliedOffer
+	for i := range offers {
+		p := OfferPrice(price, offers[i].DiscountType, offers[i].DiscountValue)
+		if p.LessThan(best) {
+			best = p
+			o := offers[i]
+			applied = &o
+		}
+	}
+	return best, applied
 }
