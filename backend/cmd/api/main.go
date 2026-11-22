@@ -1,61 +1,81 @@
+// Command api starts the HTTP server.
+//
+// Start-up order: load .env (optional) -> read and validate config -> connect to
+// PostgreSQL -> build routes -> listen. On Ctrl+C / SIGTERM it stops accepting
+// new connections and gives running requests up to 10 seconds to finish.
 package main
 
 import (
-    "log"
-    "net/http"
-    "os"
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-    "ecommerce-backend/internal/database"
-    "ecommerce-backend/internal/routes"
+	"ecommerce-backend/internal/config"
+	"ecommerce-backend/internal/database"
+	"ecommerce-backend/internal/routes"
 
-    "github.com/joho/godotenv"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-    // Load environment variables
-    err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	if err := run(); err != nil {
+		slog.Error("server stopped", "error", err)
+		os.Exit(1)
+	}
+}
 
-    // Get database URL
-    databaseURL := os.Getenv("DATABASE_URL")
-    if databaseURL == "" {
-        log.Fatal("DATABASE_URL is missing")
-    }
+func run() error {
+	// A local .env file is optional; in production the variables are usually
+	// provided by the hosting platform instead.
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not read .env file", "error", err)
+	}
 
-    // Connect to PostgreSQL
-    db, err := database.Connect(databaseURL)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer db.Close()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 
-    // Test database query
-    var databaseName string
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-    err = db.QueryRow("SELECT current_database()").Scan(&databaseName)
-    if err != nil {
-        log.Fatal("Failed to execute database query:", err)
-    }
+	db, err := database.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
-    log.Println("Successfully connected to PostgreSQL!")
-    log.Println("Connected database:", databaseName)
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           routes.New(db, cfg),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
-    // Register API routes
-  	mux := routes.RegisterRoutes(db)
+	serverErr := make(chan error, 1)
+	go func() {
+		slog.Info("API listening", "addr", srv.Addr, "cors_origins", cfg.AllowedOrigins)
+		serverErr <- srv.ListenAndServe()
+	}()
 
-    // Get application port
-    port := os.Getenv("APP_PORT")
-    if port == "" {
-        port = "8080"
-    }
+	select {
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
+		slog.Info("shutting down")
+	}
 
-    // Start HTTP server
-    log.Println("Server is running on port", port)
-
-    err = http.ListenAndServe(":"+port, mux)
-    if err != nil {
-        log.Fatal("Failed to start server:", err)
-    }
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
 }

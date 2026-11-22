@@ -1,290 +1,165 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
-	"fmt"
 
+	"ecommerce-backend/internal/apperr"
+	"ecommerce-backend/internal/database"
 	"ecommerce-backend/internal/models"
 )
 
 type AddressRepository struct {
-	DB *sql.DB
+	db *sql.DB
 }
 
-func NewAddressRepository(db *sql.DB) *AddressRepository {
-	return &AddressRepository{DB: db}
+func NewAddressRepository(db *sql.DB) *AddressRepository { return &AddressRepository{db: db} }
+
+const addressColumns = `
+	id, user_id, address_label, recipient_name, phone, city, area, street,
+	building_number, apartment_number, additional_instructions, is_default, created_at, updated_at`
+
+func scanAddress(s scanner) (models.Address, error) {
+	var a models.Address
+	err := s.Scan(&a.ID, &a.UserID, &a.AddressLabel, &a.RecipientName, &a.Phone, &a.City, &a.Area, &a.Street,
+		&a.BuildingNumber, &a.ApartmentNumber, &a.AdditionalInstructions, &a.IsDefault, &a.CreatedAt, &a.UpdatedAt)
+	return a, err
 }
 
-func (r *AddressRepository) CreateAddress(
-	userID int64,
-	request models.CreateAddressRequest,
-) (models.Address, error) {
-	tx, err := r.DB.Begin()
-	if err != nil {
-		return models.Address{}, err
-	}
-	defer tx.Rollback()
-
-	// Lock the user row to safely manage default addresses.
+// lockUser serialises default-address changes for one user. Without it, two
+// simultaneous requests could both try to set a default and one would fail on
+// the unique_default_address_per_user index.
+func lockUser(ctx context.Context, tx *sql.Tx, userID int64) error {
 	var id int64
-	err = tx.QueryRow(
-		"SELECT id FROM users WHERE id = $1 FOR UPDATE",
-		userID,
-	).Scan(&id)
-
-	if err != nil {
-		return models.Address{}, err
-	}
-
-	if request.IsDefault {
-		_, err = tx.Exec(
-			"UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1",
-			userID,
-		)
-		if err != nil {
-			return models.Address{}, err
-		}
-	}
-
-	query := `
-		INSERT INTO user_addresses (
-			user_id, address_label, recipient_name, phone,
-			city, area, street, building_number,
-			apartment_number, additional_instructions, is_default
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, user_id, address_label, recipient_name, phone,
-			city, area, street, building_number, apartment_number,
-			additional_instructions, is_default, created_at, updated_at
-	`
-
-	var address models.Address
-
-	err = tx.QueryRow(
-		query,
-		userID,
-		request.AddressLabel,
-		request.RecipientName,
-		request.Phone,
-		request.City,
-		request.Area,
-		request.Street,
-		request.BuildingNumber,
-		request.ApartmentNumber,
-		request.AdditionalInstructions,
-		request.IsDefault,
-	).Scan(
-		&address.ID,
-		&address.UserID,
-		&address.AddressLabel,
-		&address.RecipientName,
-		&address.Phone,
-		&address.City,
-		&address.Area,
-		&address.Street,
-		&address.BuildingNumber,
-		&address.ApartmentNumber,
-		&address.AdditionalInstructions,
-		&address.IsDefault,
-		&address.CreatedAt,
-		&address.UpdatedAt,
-	)
-
-	if err != nil {
-		return models.Address{}, fmt.Errorf("failed to create address: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return models.Address{}, err
-	}
-
-	return address, nil
+	err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&id)
+	return apperr.FromDB(err, "user not found")
 }
 
-func (r *AddressRepository) GetAddresses(userID int64) ([]models.Address, error) {
-	query := `
-		SELECT id, user_id, address_label, recipient_name, phone,
-			city, area, street, building_number, apartment_number,
-			additional_instructions, is_default, created_at, updated_at
-		FROM user_addresses
+func (r *AddressRepository) List(ctx context.Context, userID int64) ([]models.Address, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+addressColumns+` FROM user_addresses
 		WHERE user_id = $1
-		ORDER BY is_default DESC, created_at DESC
-	`
-
-	rows, err := r.DB.Query(query, userID)
+		ORDER BY is_default DESC, created_at DESC, id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	addresses := []models.Address{}
-
+	out := []models.Address{}
 	for rows.Next() {
-		var address models.Address
-
-		err := rows.Scan(
-			&address.ID,
-			&address.UserID,
-			&address.AddressLabel,
-			&address.RecipientName,
-			&address.Phone,
-			&address.City,
-			&address.Area,
-			&address.Street,
-			&address.BuildingNumber,
-			&address.ApartmentNumber,
-			&address.AdditionalInstructions,
-			&address.IsDefault,
-			&address.CreatedAt,
-			&address.UpdatedAt,
-		)
-
+		a, err := scanAddress(rows)
 		if err != nil {
 			return nil, err
 		}
-
-		addresses = append(addresses, address)
+		out = append(out, a)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return addresses, nil
+	return out, rows.Err()
 }
 
-func (r *AddressRepository) UpdateAddress(
-	userID int64,
-	addressID int64,
-	request models.UpdateAddressRequest,
-) (models.Address, error) {
-	query := `
-		UPDATE user_addresses
-		SET address_label = $1,
-			recipient_name = $2,
-			phone = $3,
-			city = $4,
-			area = $5,
-			street = $6,
-			building_number = $7,
-			apartment_number = $8,
-			additional_instructions = $9,
-			updated_at = NOW()
+func (r *AddressRepository) Get(ctx context.Context, userID, id int64) (models.Address, error) {
+	a, err := scanAddress(r.db.QueryRowContext(ctx,
+		`SELECT `+addressColumns+` FROM user_addresses WHERE id = $1 AND user_id = $2`, id, userID))
+	return a, apperr.FromDB(err, "address not found")
+}
+
+// Create inserts an address. The user's FIRST address automatically becomes the
+// default; otherwise it becomes default only when is_default is true.
+func (r *AddressRepository) Create(ctx context.Context, userID int64, in models.AddressInput) (models.Address, error) {
+	var a models.Address
+	err := database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if err := lockUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		var hasDefault bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM user_addresses WHERE user_id = $1 AND is_default)`, userID,
+		).Scan(&hasDefault); err != nil {
+			return err
+		}
+		makeDefault := in.IsDefault || !hasDefault
+		if makeDefault && hasDefault {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE user_addresses SET is_default = FALSE, updated_at = NOW() WHERE user_id = $1 AND is_default`, userID); err != nil {
+				return err
+			}
+		}
+		var err error
+		a, err = scanAddress(tx.QueryRowContext(ctx, `
+			INSERT INTO user_addresses (user_id, address_label, recipient_name, phone, city, area, street,
+			                            building_number, apartment_number, additional_instructions, is_default)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			RETURNING `+addressColumns,
+			userID, in.AddressLabel, in.RecipientName, in.Phone, in.City, in.Area, in.Street,
+			in.BuildingNumber, in.ApartmentNumber, in.AdditionalInstructions, makeDefault))
+		return err
+	})
+	return a, apperr.FromDB(err, "address not found")
+}
+
+// Update changes the address fields (not the default flag).
+func (r *AddressRepository) Update(ctx context.Context, userID, id int64, in models.AddressInput) (models.Address, error) {
+	a, err := scanAddress(r.db.QueryRowContext(ctx, `
+		UPDATE user_addresses SET
+			address_label = $1, recipient_name = $2, phone = $3, city = $4, area = $5, street = $6,
+			building_number = $7, apartment_number = $8, additional_instructions = $9, updated_at = NOW()
 		WHERE id = $10 AND user_id = $11
-		RETURNING id, user_id, address_label, recipient_name, phone,
-			city, area, street, building_number, apartment_number,
-			additional_instructions, is_default, created_at, updated_at
-	`
-
-	var address models.Address
-
-	err := r.DB.QueryRow(
-		query,
-		request.AddressLabel,
-		request.RecipientName,
-		request.Phone,
-		request.City,
-		request.Area,
-		request.Street,
-		request.BuildingNumber,
-		request.ApartmentNumber,
-		request.AdditionalInstructions,
-		addressID,
-		userID,
-	).Scan(
-		&address.ID,
-		&address.UserID,
-		&address.AddressLabel,
-		&address.RecipientName,
-		&address.Phone,
-		&address.City,
-		&address.Area,
-		&address.Street,
-		&address.BuildingNumber,
-		&address.ApartmentNumber,
-		&address.AdditionalInstructions,
-		&address.IsDefault,
-		&address.CreatedAt,
-		&address.UpdatedAt,
-	)
-
-	if err != nil {
-		return models.Address{}, err
-	}
-
-	return address, nil
+		RETURNING `+addressColumns,
+		in.AddressLabel, in.RecipientName, in.Phone, in.City, in.Area, in.Street,
+		in.BuildingNumber, in.ApartmentNumber, in.AdditionalInstructions, id, userID))
+	return a, apperr.FromDB(err, "address not found")
 }
 
-func (r *AddressRepository) DeleteAddress(userID int64, addressID int64) error {
-	result, err := r.DB.Exec(
-		"DELETE FROM user_addresses WHERE id = $1 AND user_id = $2",
-		addressID,
-		userID,
-	)
-	if err != nil {
+// Delete removes an address. Past orders are unaffected: they keep their own
+// copy of the address (orders.address_id simply becomes NULL). If the default
+// address is deleted, the most recent remaining address becomes the default.
+func (r *AddressRepository) Delete(ctx context.Context, userID, id int64) error {
+	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if err := lockUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		var wasDefault bool
+		if err := tx.QueryRowContext(ctx,
+			`DELETE FROM user_addresses WHERE id = $1 AND user_id = $2 RETURNING is_default`, id, userID,
+		).Scan(&wasDefault); err != nil {
+			return apperr.FromDB(err, "address not found")
+		}
+		if !wasDefault {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE user_addresses SET is_default = TRUE, updated_at = NOW()
+			WHERE id = (SELECT id FROM user_addresses WHERE user_id = $1
+			            ORDER BY created_at DESC, id DESC LIMIT 1)`, userID)
 		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
+	})
 }
 
-func (r *AddressRepository) SetDefaultAddress(
-	userID int64,
-	addressID int64,
-) error {
-	tx, err := r.DB.Begin()
-	if err != nil {
+func (r *AddressRepository) SetDefault(ctx context.Context, userID, id int64) (models.Address, error) {
+	var a models.Address
+	err := database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if err := lockUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM user_addresses WHERE id = $1 AND user_id = $2)`, id, userID,
+		).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return apperr.NotFound("address not found")
+		}
+		// Unset first, then set: the partial unique index allows only one TRUE.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE user_addresses SET is_default = FALSE, updated_at = NOW()
+			WHERE user_id = $1 AND is_default AND id <> $2`, userID, id); err != nil {
+			return err
+		}
+		var err error
+		a, err = scanAddress(tx.QueryRowContext(ctx, `
+			UPDATE user_addresses SET is_default = TRUE, updated_at = NOW()
+			WHERE id = $1 AND user_id = $2
+			RETURNING `+addressColumns, id, userID))
 		return err
-	}
-	defer tx.Rollback()
-
-	// Serialize default-address changes for this user.
-	var id int64
-	err = tx.QueryRow(
-		"SELECT id FROM users WHERE id = $1 FOR UPDATE",
-		userID,
-	).Scan(&id)
-
-	if err != nil {
-		return err
-	}
-
-	// Confirm that the address belongs to this user.
-	err = tx.QueryRow(
-		"SELECT id FROM user_addresses WHERE id = $1 AND user_id = $2",
-		addressID,
-		userID,
-	).Scan(&id)
-
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(
-		"UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1",
-		userID,
-	)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(
-		"UPDATE user_addresses SET is_default = TRUE, updated_at = NOW() WHERE id = $1 AND user_id = $2",
-		addressID,
-		userID,
-	)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	})
+	return a, apperr.FromDB(err, "address not found")
 }

@@ -1,83 +1,55 @@
 package handlers
 
 import (
-	"database/sql"
-	"encoding/json"
 	"net/http"
-	"strconv"
 
-	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/services"
 )
 
 type FavoriteHandler struct {
-	Service *services.FavoriteService
+	favorites *services.FavoriteService
 }
 
-func NewFavoriteHandler(service *services.FavoriteService) *FavoriteHandler {
-	return &FavoriteHandler{Service: service}
+func NewFavoriteHandler(favorites *services.FavoriteService) *FavoriteHandler {
+	return &FavoriteHandler{favorites: favorites}
 }
 
-func (h *FavoriteHandler) AddFavorite(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	var request models.AddFavoriteRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	err := h.Service.AddFavorite(userID, request.ProductID)
+// List: GET /api/favorites
+func (h *FavoriteHandler) List(w http.ResponseWriter, r *http.Request) error {
+	favs, err := h.favorites.List(r.Context(), auth.UserID(r.Context()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Product added to favorites successfully",
-	})
+	return httpx.JSON(w, http.StatusOK, favs)
 }
 
-func (h *FavoriteHandler) GetFavorites(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	favorites, err := h.Service.GetFavorites(userID)
-	if err != nil {
-		http.Error(w, "Failed to get favorites", http.StatusInternalServerError)
-		return
+// Add: POST /api/favorites {product_id} -> 201 if new, 200 if it already was a favorite
+func (h *FavoriteHandler) Add(w http.ResponseWriter, r *http.Request) error {
+	var req models.AddFavoriteRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(favorites)
+	created, err := h.favorites.Add(r.Context(), auth.UserID(r.Context()), req.ProductID)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return httpx.Message(w, http.StatusOK, "product is already in your favorites")
+	}
+	return httpx.Message(w, http.StatusCreated, "product added to favorites")
 }
 
-func (h *FavoriteHandler) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(int64)
-
-	productID, err := strconv.ParseInt(r.PathValue("product_id"), 10, 64)
-	if err != nil || productID <= 0 {
-		http.Error(w, "Invalid product ID", http.StatusBadRequest)
-		return
-	}
-
-	err = h.Service.RemoveFavorite(userID, productID)
+// Remove: DELETE /api/favorites/{product_id}
+func (h *FavoriteHandler) Remove(w http.ResponseWriter, r *http.Request) error {
+	productID, err := httpx.PathID(r, "product_id")
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "Favorite not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to remove favorite", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Favorite removed successfully",
-	})
+	if err := h.favorites.Remove(r.Context(), auth.UserID(r.Context()), productID); err != nil {
+		return err
+	}
+	return httpx.Message(w, http.StatusOK, "product removed from favorites")
 }

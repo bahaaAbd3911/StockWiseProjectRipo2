@@ -1,293 +1,149 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
+
+	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/models"
-	"errors"
-	"fmt"
 )
 
 type ProductRepository struct {
-	DB *sql.DB
+	db *sql.DB
 }
 
-func NewProductRepository(db *sql.DB) *ProductRepository {
-	return &ProductRepository{
-		DB: db,
+func NewProductRepository(db *sql.DB) *ProductRepository { return &ProductRepository{db: db} }
+
+// productSorts maps the ?sort= values to ORDER BY clauses. Only these fixed
+// strings are ever put into the SQL, so sorting cannot be used for injection.
+var productSorts = map[string]string{
+	"newest":     "p.created_at DESC, p.id DESC",
+	"price_asc":  "p.price * (100 - p.discount_value) ASC, p.id",
+	"price_desc": "p.price * (100 - p.discount_value) DESC, p.id",
+	"name":       "p.name ASC, p.id",
+}
+
+// IsValidSort reports whether s is an accepted ?sort= value.
+func IsValidSort(s string) bool {
+	_, ok := productSorts[s]
+	return ok
+}
+
+// List returns one page of products and the total number of matches.
+func (r *ProductRepository) List(ctx context.Context, f models.ProductFilter) (models.Page[models.Product], error) {
+	var w whereBuilder
+	if !f.IncludeInactive {
+		w.addRaw("p.is_active")
 	}
-}
+	if f.InStockOnly {
+		w.addRaw("p.stock > 0")
+	}
+	if f.Category != "" {
+		// The same $n is used twice; ::text pins its type for PostgreSQL.
+		w.add("(lower(p.category) = lower(?::text) OR p.category_ar = ?::text)", f.Category)
+	}
+	if f.Search != "" {
+		w.add("(p.name ILIKE ?::text OR p.name_ar ILIKE ?::text OR p.description ILIKE ?::text OR p.description_ar ILIKE ?::text)",
+			"%"+escapeLike(f.Search)+"%")
+	}
 
-func (r *ProductRepository) GetAll() ([]models.Product, error) {
-	query := `
-        SELECT
-            id,
-            name,
-            name_ar,
-            description,
-            description_ar,
-            category,
-            category_ar,
-            price,
-            discount_value,
-            stock,
-            created_at,
-            updated_at,
-            is_active
-        FROM products
-        WHERE is_active = TRUE
-        ORDER BY id;
-    `
+	page := models.Page[models.Product]{Items: []models.Product{}, Limit: f.Limit, Offset: f.Offset}
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM products p`+w.sql(), w.args...).Scan(&page.Total); err != nil {
+		return page, err
+	}
 
-	rows, err := r.DB.Query(query)
+	order, ok := productSorts[f.Sort]
+	if !ok {
+		order = productSorts["newest"]
+	}
+	query := `SELECT ` + productColumns + ` FROM products p` + w.sql() +
+		` ORDER BY ` + order + ` LIMIT ` + w.next(f.Limit) + ` OFFSET ` + w.next(f.Offset)
+
+	rows, err := r.db.QueryContext(ctx, query, w.args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve products: %w", err)
+		return page, err
 	}
 	defer rows.Close()
-
-	products := make([]models.Product, 0)
-
 	for rows.Next() {
-		var product models.Product
-
-		err := rows.Scan(
-			&product.ID,
-			&product.Name,
-			&product.NameAr,
-			&product.Description,
-			&product.DescriptionAr,
-			&product.Category,
-			&product.CategoryAr,
-			&product.Price,
-			&product.DiscountValue,
-			&product.Stock,
-			&product.CreatedAt,
-			&product.UpdatedAt,
-			&product.IsActive,
-		)
-
+		p, err := scanProduct(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan product: %w", err)
+			return page, err
 		}
-
-		products = append(products, product)
+		page.Items = append(page.Items, p)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating products: %w", err)
-	}
-
-	return products, nil
+	return page, rows.Err()
 }
-func (r *ProductRepository) GetByID(id int64) (models.Product, error) {
-	query := `
-        SELECT
-            id,
-            name,
-            name_ar,
-            description,
-            description_ar,
-            category,
-            category_ar,
-            price,
-            discount_value,
-            stock,
-            created_at,
-            updated_at,
-            is_active
-        FROM products
-        WHERE id = $1 AND is_active = TRUE;
-    `
 
-	var product models.Product
+// Get returns one product. Inactive (soft-deleted) products are only visible
+// when includeInactive is true (admin).
+func (r *ProductRepository) Get(ctx context.Context, id int64, includeInactive bool) (models.Product, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT `+productColumns+` FROM products p WHERE p.id = $1 AND (p.is_active OR $2)`,
+		id, includeInactive)
+	p, err := scanProduct(row)
+	return p, apperr.FromDB(err, "product not found")
+}
 
-	err := r.DB.QueryRow(query, id).Scan(
-		&product.ID,
-		&product.Name,
-		&product.NameAr,
-		&product.Description,
-		&product.DescriptionAr,
-		&product.Category,
-		&product.CategoryAr,
-		&product.Price,
-		&product.DiscountValue,
-		&product.Stock,
-		&product.CreatedAt,
-		&product.UpdatedAt,
-		&product.IsActive,
+// Create inserts a product; is_active defaults to true when not given.
+// Empty optional texts are stored as NULL.
+func (r *ProductRepository) Create(ctx context.Context, in models.ProductInput) (int64, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO products (name, name_ar, description, description_ar, category, category_ar,
+		                      price, discount_value, stock, is_active)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''),
+		        $7, $8, $9, COALESCE($10, TRUE))
+		RETURNING id`,
+		in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
+		in.Price, in.DiscountValue, in.Stock, in.IsActive,
+	).Scan(&id)
+	return id, apperr.FromDB(err, "product not found")
+}
+
+// Update replaces all editable fields; is_active is kept when not given.
+func (r *ProductRepository) Update(ctx context.Context, id int64, in models.ProductInput) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE products SET
+			name = $1, name_ar = $2,
+			description = NULLIF($3, ''), description_ar = NULLIF($4, ''),
+			category = NULLIF($5, ''), category_ar = NULLIF($6, ''),
+			price = $7, discount_value = $8, stock = $9,
+			is_active = COALESCE($10, is_active),
+			updated_at = NOW()
+		WHERE id = $11`,
+		in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
+		in.Price, in.DiscountValue, in.Stock, in.IsActive, id,
 	)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Product{}, sql.ErrNoRows
-	}
-
-	if err != nil {
-		return models.Product{}, err
-	}
-	return product, nil
+	return expectOneRow(res, err, "product not found")
 }
-func (r *ProductRepository) Create(product models.CreateProductRequest) (models.Product, error) {
-	query := `
-        INSERT INTO products (
-            name,
-            name_ar,
-            description,
-            description_ar,
-            category,
-            category_ar,
-            price,
-            discount_value,
-            stock,
-            is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING
-            id,
-            name,
-            name_ar,
-            description,
-            description_ar,
-            category,
-            category_ar,
-            price,
-            discount_value,
-            stock,
-            created_at,
-            updated_at,
-            is_active;
-    `
 
-	var createdProduct models.Product
-
-	err := r.DB.QueryRow(
-		query,
-		product.Name,
-		product.NameAr,
-		product.Description,
-		product.DescriptionAr,
-		product.Category,
-		product.CategoryAr,
-		product.Price,
-		product.DiscountValue,
-		product.Stock,
-		product.IsActive,
-	).Scan(
-		&createdProduct.ID,
-		&createdProduct.Name,
-		&createdProduct.NameAr,
-		&createdProduct.Description,
-		&createdProduct.DescriptionAr,
-		&createdProduct.Category,
-		&createdProduct.CategoryAr,
-		&createdProduct.Price,
-		&createdProduct.DiscountValue,
-		&createdProduct.Stock,
-		&createdProduct.CreatedAt,
-		&createdProduct.UpdatedAt,
-		&createdProduct.IsActive,
-	)
-
-	if err != nil {
-		return models.Product{}, fmt.Errorf("failed to create product: %w", err)
-	}
-
-	return createdProduct, nil
+// Deactivate soft-deletes: the row stays so order history and reviews keep
+// working, but it disappears from the public catalog and cannot be bought.
+func (r *ProductRepository) Deactivate(ctx context.Context, id int64) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE products SET is_active = FALSE, updated_at = NOW() WHERE id = $1 AND is_active`, id)
+	return expectOneRow(res, err, "product not found or already inactive")
 }
-func (r *ProductRepository) Update(
-	id int64,
-	product models.UpdateProductRequest,
-) (models.Product, error) {
 
-	query := `
-        UPDATE products
-        SET
-            name = $1,
-            name_ar = $2,
-            description = $3,
-            description_ar = $4,
-            category = $5,
-            category_ar = $6,
-            price = $7,
-            discount_value = $8,
-            stock = $9,
-            is_active = $10,
-            updated_at = NOW()
-        WHERE id = $11
-        RETURNING
-            id,
-            name,
-            name_ar,
-            description,
-            description_ar,
-            category,
-            category_ar,
-            price,
-            discount_value,
-            stock,
-            created_at,
-            updated_at,
-            is_active;
-    `
-
-	var updatedProduct models.Product
-
-	err := r.DB.QueryRow(
-		query,
-		product.Name,
-		product.NameAr,
-		product.Description,
-		product.DescriptionAr,
-		product.Category,
-		product.CategoryAr,
-		product.Price,
-		product.DiscountValue,
-		product.Stock,
-		product.IsActive,
-		id,
-	).Scan(
-		&updatedProduct.ID,
-		&updatedProduct.Name,
-		&updatedProduct.NameAr,
-		&updatedProduct.Description,
-		&updatedProduct.DescriptionAr,
-		&updatedProduct.Category,
-		&updatedProduct.CategoryAr,
-		&updatedProduct.Price,
-		&updatedProduct.DiscountValue,
-		&updatedProduct.Stock,
-		&updatedProduct.CreatedAt,
-		&updatedProduct.UpdatedAt,
-		&updatedProduct.IsActive,
-	)
-
+// Categories lists the distinct categories of active products.
+func (r *ProductRepository) Categories(ctx context.Context) ([]models.Category, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT category, COALESCE(MAX(category_ar), ''), COUNT(*)
+		FROM products
+		WHERE is_active AND category IS NOT NULL AND category <> ''
+		GROUP BY category
+		ORDER BY category`)
 	if err != nil {
-		return models.Product{}, fmt.Errorf("failed to update product: %w", err)
+		return nil, err
 	}
-
-	return updatedProduct, nil
-}
-func (r *ProductRepository) Delete(id int64) error {
-	query := `
-        UPDATE products
-        SET
-            is_active = FALSE,
-            updated_at = NOW()
-        WHERE id = $1
-        AND is_active = TRUE;
-    `
-
-	result, err := r.DB.Exec(query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete product: %w", err)
+	defer rows.Close()
+	out := []models.Category{}
+	for rows.Next() {
+		var c models.Category
+		if err := rows.Scan(&c.Name, &c.NameAr, &c.ProductCount); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check deleted product: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
+	return out, rows.Err()
 }

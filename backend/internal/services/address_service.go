@@ -1,79 +1,47 @@
 package services
 
 import (
-	"errors"
+	"context"
 
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/repository"
+	"ecommerce-backend/internal/validators"
 )
 
 type AddressService struct {
-	Repository *repository.AddressRepository
+	addresses *repository.AddressRepository
 }
 
-func NewAddressService(repo *repository.AddressRepository) *AddressService {
-	return &AddressService{Repository: repo}
+func NewAddressService(addresses *repository.AddressRepository) *AddressService {
+	return &AddressService{addresses: addresses}
 }
 
-func (s *AddressService) CreateAddress(
-	userID int64,
-	request models.CreateAddressRequest,
-) (models.Address, error) {
-	if userID <= 0 {
-		return models.Address{}, errors.New("invalid user ID")
-	}
-
-	if request.RecipientName == "" ||
-		request.Phone == "" ||
-		request.City == "" ||
-		request.Area == "" ||
-		request.Street == "" {
-		return models.Address{}, errors.New("required address fields are missing")
-	}
-
-	return s.Repository.CreateAddress(userID, request)
+func (s *AddressService) List(ctx context.Context, userID int64) ([]models.Address, error) {
+	return s.addresses.List(ctx, userID)
 }
 
-func (s *AddressService) GetAddresses(userID int64) ([]models.Address, error) {
-	if userID <= 0 {
-		return nil, errors.New("invalid user ID")
-	}
-
-	return s.Repository.GetAddresses(userID)
+func (s *AddressService) Get(ctx context.Context, userID, id int64) (models.Address, error) {
+	return s.addresses.Get(ctx, userID, id)
 }
 
-func (s *AddressService) UpdateAddress(
-	userID int64,
-	addressID int64,
-	request models.UpdateAddressRequest,
-) (models.Address, error) {
-	if userID <= 0 || addressID <= 0 {
-		return models.Address{}, errors.New("invalid user ID or address ID")
+func (s *AddressService) Create(ctx context.Context, userID int64, in models.AddressInput) (models.Address, error) {
+	if err := validators.ValidateAddress(&in); err != nil {
+		return models.Address{}, err
 	}
-
-	if request.RecipientName == "" ||
-		request.Phone == "" ||
-		request.City == "" ||
-		request.Area == "" ||
-		request.Street == "" {
-		return models.Address{}, errors.New("required address fields are missing")
-	}
-
-	return s.Repository.UpdateAddress(userID, addressID, request)
+	return s.addresses.Create(ctx, userID, in)
 }
 
-func (s *AddressService) DeleteAddress(userID int64, addressID int64) error {
-	if userID <= 0 || addressID <= 0 {
-		return errors.New("invalid user ID or address ID")
+func (s *AddressService) Update(ctx context.Context, userID, id int64, in models.AddressInput) (models.Address, error) {
+	if err := validators.ValidateAddress(&in); err != nil {
+		return models.Address{}, err
 	}
-
-	return s.Repository.DeleteAddress(userID, addressID)
+	return s.addresses.Update(ctx, userID, id, in)
 }
 
-func (s *AddressService) SetDefaultAddress(userID int64, addressID int64) error {
-	if userID <= 0 || addressID <= 0 {
-		return errors.New("invalid user ID or address ID")
-	}
+func (s *AddressService) Delete(ctx context.Context, userID, id int64) error {
+	return s.addresses.Delete(ctx, userID, id)
+}
 
-	return s.Repository.SetDefaultAddress(userID, addressID)
+func (s *AddressService) SetDefault(ctx context.Context, userID, id int64) (models.Address, error) {
+	return s.addresses.SetDefault(ctx, userID, id)
 }

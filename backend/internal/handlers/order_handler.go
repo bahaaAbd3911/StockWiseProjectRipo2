@@ -1,165 +1,111 @@
 package handlers
 
 import (
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 
-	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/services"
 )
 
 type OrderHandler struct {
-	Service *services.OrderService
+	orders *services.OrderService
 }
 
-func NewOrderHandler(service *services.OrderService) *OrderHandler {
-	return &OrderHandler{
-		Service: service,
-	}
+func NewOrderHandler(orders *services.OrderService) *OrderHandler {
+	return &OrderHandler{orders: orders}
 }
 
-func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+// Checkout: POST /api/orders {address_id?} - address_id omitted = default address
+func (h *OrderHandler) Checkout(w http.ResponseWriter, r *http.Request) error {
+	var req models.CreateOrderRequest
+	if err := httpx.DecodeOptionalJSON(w, r, &req); err != nil { // an empty body is allowed
+		return err
 	}
-
-	var request models.CreateOrderRequest
-
-	err := json.NewDecoder(r.Body).Decode(&request)
+	order, err := h.orders.Checkout(r.Context(), auth.UserID(r.Context()), req)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+		return err
 	}
-
-	order, err := h.Service.CreateOrder(userID, request)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(order)
-}
-func (h *OrderHandler) GetOrders(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	orders, err := h.Service.GetOrdersByUserID(userID)
-	if err != nil {
-		http.Error(w, "Failed to retrieve orders", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orders)
+	return httpx.JSON(w, http.StatusCreated, order)
 }
 
-func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || orderID <= 0 {
-		http.Error(w, "Invalid order ID", http.StatusBadRequest)
-		return
-	}
-
-	order, err := h.Service.GetOrderByID(userID, orderID)
+// ListMine: GET /api/orders
+func (h *OrderHandler) ListMine(w http.ResponseWriter, r *http.Request) error {
+	orders, err := h.orders.ListMine(r.Context(), auth.UserID(r.Context()))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Order not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to retrieve order", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(order)
+	return httpx.JSON(w, http.StatusOK, orders)
 }
-func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || orderID <= 0 {
-		http.Error(w, "Invalid order ID", http.StatusBadRequest)
-		return
-	}
-
-	err = h.Service.CancelOrder(userID, orderID)
+// GetMine: GET /api/orders/{id}
+func (h *OrderHandler) GetMine(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Order not found", http.StatusNotFound)
-			return
-		}
-
-		if err.Error() == "only pending orders can be cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-
-		http.Error(w, "Failed to cancel order", http.StatusInternalServerError)
-		return
+		return err
 	}
+	order, err := h.orders.GetMine(r.Context(), auth.UserID(r.Context()), id)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, order)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Order cancelled successfully",
+// CancelMine: POST /api/orders/{id}/cancel
+func (h *OrderHandler) CancelMine(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	order, err := h.orders.CancelMine(r.Context(), auth.UserID(r.Context()), id)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, order)
+}
+
+// AdminList: GET /api/admin/orders?status=&limit=&offset=
+func (h *OrderHandler) AdminList(w http.ResponseWriter, r *http.Request) error {
+	limit, offset, err := httpx.Pagination(r)
+	if err != nil {
+		return err
+	}
+	page, err := h.orders.List(r.Context(), models.OrderFilter{
+		Status: r.URL.Query().Get("status"), Limit: limit, Offset: offset,
 	})
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, page)
 }
-func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
-	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || orderID <= 0 {
-		http.Error(w, "Invalid order ID", http.StatusBadRequest)
-		return
-	}
 
-	var request models.UpdateOrderStatusRequest
-
-	err = json.NewDecoder(r.Body).Decode(&request)
+// AdminGet: GET /api/admin/orders/{id}
+func (h *OrderHandler) AdminGet(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+		return err
 	}
-
-	err = h.Service.UpdateOrderStatus(orderID, request.Status)
+	order, err := h.orders.Get(r.Context(), id)
 	if err != nil {
-		if err.Error() == "invalid order status" ||
-			strings.HasPrefix(err.Error(), "cannot change order status") {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Order not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Failed to update order status", http.StatusInternalServerError)
-		return
+		return err
 	}
+	return httpx.JSON(w, http.StatusOK, order)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Order status updated successfully",
-	})
+// AdminUpdateStatus: PUT /api/admin/orders/{id}/status {status}
+func (h *OrderHandler) AdminUpdateStatus(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var req models.UpdateOrderStatusRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	order, err := h.orders.UpdateStatus(r.Context(), id, req.Status)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, order)
 }

@@ -1,42 +1,8 @@
-
-# Environment variables and secrets
 .env
-.env.*
-!.env.example
-
-# Go build outputs
-/bin/
-/dist/
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-
-# Test and coverage outputs
-coverage.out
-coverage.html
-*.coverprofile
-
-# Logs
 *.log
-
-# IDE settings
+*.exe
+*.test
+coverage.out
+.DS_Store
 .vscode/
 .idea/
-
-# Operating system files
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# Temporary files
-*.tmp
-*.swp
-*.bak
-
-# Database backups and local dumps
-*.dump
-*.backup
-*.bak
-*_data.sql
