@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,5 +54,11 @@ func TestAddQuery(t *testing.T) {
 	got, err := AddQuery("https://shop.example.com/verify-email?lang=ar", "token", "a+b/c")
 	if err != nil || got != "https://shop.example.com/verify-email?lang=ar&token=a%2Bb%2Fc" {
 		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestMaxAttemptsConstantsAgree(t *testing.T) {
+	if maxAttemptsSQL != strconv.Itoa(maxAttempts) {
+		t.Fatalf("maxAttemptsSQL (%s) must equal maxAttempts (%d)", maxAttemptsSQL, maxAttempts)
 	}
 }

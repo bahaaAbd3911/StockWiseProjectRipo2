@@ -131,7 +131,10 @@ backend/
 │   └── validators/            input normalising and checks
 ├── migrations/                numbered SQL files (000001 .. 000004, up and down)
 ├── tests/                     end-to-end tests against a throwaway database
-├── deploy/Caddyfile           HTTPS reverse proxy configuration
+├── deploy/
+│   ├── Caddyfile              HTTPS reverse proxy configuration
+│   ├── backup.sh              daily database + uploads backup (cron)
+│   └── restore.sh             test a backup, or restore it
 ├── docs/                      this guide and the deep dives
 ├── Dockerfile                 production image
 ├── docker-compose.yml         database + migrations + API + Caddy on one server
@@ -511,11 +514,22 @@ notify.Worker every EMAIL_POLL_INTERVAL (5 s):
   The reminder and `users.debt_reminded_at` are written in one transaction,
   so nobody is reminded twice for the same period. Paid-up customers get
   nothing. `DEBT_REMINDER_INTERVAL=0` turns reminders off.
-- Useful SQL for an admin:
-  ```sql
-  SELECT kind, to_address, attempts, last_error, created_at FROM email_outbox WHERE sent_at IS NULL;  -- stuck emails
-  UPDATE email_outbox SET attempts = 0, next_attempt_at = NOW() WHERE sent_at IS NULL;            -- retry now
-  ```
+- **Admin endpoints for the queue** (for an "Emails" page in the admin panel):
+
+  | Endpoint | Use |
+  |---|---|
+  | `GET /api/admin/emails/summary` | `{pending, failed, sent_last_24h, oldest_pending_at}` - an old `oldest_pending_at` means delivery is stuck (check the SMTP settings) |
+  | `GET /api/admin/emails?status=pending\|failed\|sent&kind=&to=` | the list, newest first, with `attempts`, `last_error`, `next_attempt_at` |
+  | `GET /api/admin/emails/{id}` | one email with its full text |
+  | `POST /api/admin/emails/{id}/retry` | send again now with a fresh set of attempts (after fixing the cause) |
+  | `POST /api/admin/emails/retry-failed` | the same for every failed email |
+  | `DELETE /api/admin/emails/{id}` | cancel an email that has not been sent |
+
+  Statuses are computed: **sent** (`sent_at` set), **failed** (10 attempts
+  used up), **pending** (everything else, including waiting for a retry).
+  Sent emails cannot be retried or cancelled (409).
+- **Retention**: the worker deletes delivered emails older than 30 days, once
+  an hour. The queue is not an archive, and old emails contain customer data.
 
 ## 7. Database and migrations
 
@@ -631,8 +645,30 @@ docker compose logs -f api                    # "starting env=production"
 ```
 
 Updating: `git pull` then the same `up -d --build` (migrations run first,
-then the new API replaces the old one). Back up the `db-data` volume (or use
-`pg_dump`) daily, and keep `caddy-data` (certificates) and `uploads`.
+then the new API replaces the old one).
+
+**Backups** (`deploy/backup.sh`, run daily from cron):
+1. `pg_dump` in custom format (compressed; tables can be restored one by one),
+   run inside the database container, so nothing has to be installed on the
+   server. With a managed database (`DATABASE_URL` set) it runs in a temporary
+   postgres container instead.
+2. The dump is **read back** with `pg_restore --list` before it is kept, so a
+   broken dump is never mistaken for a backup.
+3. The `uploads` volume is archived (skipped with S3 storage).
+4. Files older than `KEEP_DAYS` (30) are deleted.
+5. With `BACKUP_REMOTE` set (an rclone remote such as Cloudflare R2, S3,
+   Google Drive, Backblaze), the files are copied **off the server** - a
+   backup on the same disk does not survive the disk.
+
+Files are created readable by the owner only (`umask 077`), because they
+contain customer data.
+
+`deploy/restore.sh --test <dump>` restores into a separate
+`ecommerce_restore_test` database, prints row counts of the main tables and
+drops it: proof that the backups work, without touching live data.
+`deploy/restore.sh --live <dump> [uploads.tar.gz]` replaces the live data
+(asks you to type `restore`, stops the API and Caddy, restores, starts
+everything again).
 
 Without Docker: `go build ./cmd/api ./cmd/migrate`, run `migrate up`, then
 `api` under systemd or similar, behind Caddy or Nginx.
@@ -670,6 +706,7 @@ data is never touched. Emails go to an in-memory mailer.
 | `TestDebtNotificationsAndReminders` | payment and adjustment emails, reminder timing, never twice, none when paid |
 | `TestBackInStockEmails` | restock emails waiting customers once, not cancelled ones |
 | `TestImageUploads` | upload, serve, refusals (fake, too big, missing, not admin), deletes remove files, profile pictures |
+| `TestAdminEmailQueue` | summary, filters, detail, retry one / all failed, cancel, 409 on sent emails, retention clean-up, admin only |
 | `TestMigrateAdoptsExistingDatabase`, `TestCORSPreflightAndHealth` | tooling |
 
 ## 12. API reference
@@ -762,6 +799,16 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 | POST | `/api/admin/customers/{id}/debt/payments` | A |
 | POST | `/api/admin/customers/{id}/debt/adjustments` | A |
 
+**Email queue (admin)**
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/api/admin/emails` (`?status= &kind= &to= &limit= &offset=`) | A |
+| GET | `/api/admin/emails/summary` | A |
+| GET / DELETE | `/api/admin/emails/{id}` | A |
+| POST | `/api/admin/emails/{id}/retry` | A |
+| POST | `/api/admin/emails/retry-failed` | A |
+
 Bodies for offers, bundles and debts: [offers-bundles-debts.md](offers-bundles-debts.md).
 
 **Status codes**: 400 bad input (see `fields`), 401 not logged in / expired /
@@ -799,5 +846,5 @@ log). Lists: `?limit=` (1-100, default 20) and `?offset=` →
   Images, imgproxy) is the usual next step.
 - Online card payments, coupon codes typed at checkout, SMS notifications and
   a CAPTCHA are not included.
-- Emails that failed 10 times stay in `email_outbox` for an admin to inspect;
-  there is no admin screen for them yet.
+- The email queue has admin endpoints but no screen yet: the frontend admin
+  panel needs an "Emails" page using them (section 6.14).

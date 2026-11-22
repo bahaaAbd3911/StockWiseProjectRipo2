@@ -65,19 +65,34 @@ docker compose exec db psql -U shop_api -d ecommerce \
 - [ ] Forgot password → the email arrives → reset works
 - [ ] Place an order → "Order received" email; change its status → status email
 - [ ] Upload a product image in the admin → it shows in the shop
-- [ ] `SELECT COUNT(*) FROM email_outbox WHERE sent_at IS NULL;` stays near 0
+- [ ] `GET /api/admin/emails/summary` shows `failed: 0` and a small `pending`
 
 ## 6. Backups (do not skip)
 
-```bash
-# daily database dump, e.g. from cron at 03:00
-docker compose exec -T db pg_dump -U shop_api -Fc ecommerce > backup-$(date +%F).dump
-```
+1. Somewhere **off the server** for the copies. For example a Cloudflare R2 or
+   S3 bucket: install rclone (`curl https://rclone.org/install.sh | sudo bash`)
+   and run `rclone config` to add it as a remote, e.g. `r2`.
+2. Run the first backup by hand and check it:
+   ```bash
+   BACKUP_REMOTE=r2:stockwise-backups deploy/backup.sh
+   ls -lh /var/backups/stockwise/
+   ```
+3. **Prove the backup restores** (does not touch live data):
+   ```bash
+   deploy/restore.sh --test /var/backups/stockwise/stockwise-db-<date>.dump
+   ```
+4. Schedule it daily (`crontab -e`):
+   ```
+   0 3 * * * cd /opt/stockwise/backend && BACKUP_REMOTE=r2:stockwise-backups deploy/backup.sh >> /var/log/stockwise-backup.log 2>&1
+   ```
+5. Repeat step 3 every month or so, and read the log now and then
+   (`grep FAILED /var/log/stockwise-backup.log`).
 
-- Copy the dumps **off the server** (S3, another machine) and keep ~30 days.
-- Also back up the `uploads` volume (`docker run --rm -v stockwise_uploads:/u -v $PWD:/b alpine tar czf /b/uploads.tgz -C /u .`).
-- **Test a restore once**: `pg_restore -U shop_api -d ecommerce_restore_test backup.dump`.
-- Managed databases (Neon, Supabase, RDS) have automatic backups: turn on point-in-time recovery.
+Restoring for real (replaces the live data, asks for confirmation):
+`deploy/restore.sh --live <db.dump> [<uploads.tar.gz>]`.
+
+Managed databases (Neon, Supabase, RDS) also have their own automatic
+backups: turn on point-in-time recovery there as well.
 
 ## 7. Updating
 
@@ -95,4 +110,6 @@ when a release adds a migration.
   (UptimeRobot, Better Stack, ...).
 - Logs are JSON on stdout: `docker compose logs -f api`, or ship them to a log
   service. Search for `level=ERROR`.
-- Watch stuck emails: `SELECT kind, to_address, attempts, last_error FROM email_outbox WHERE sent_at IS NULL;`
+- Watch the email queue: `GET /api/admin/emails/summary` (as an admin). A
+  growing `failed` count or an old `oldest_pending_at` means emails are not
+  going out - check the SMTP settings, then `POST /api/admin/emails/retry-failed`.

@@ -114,6 +114,7 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	bundles := handlers.NewBundleHandler(bundleSvc)
 	debts := handlers.NewDebtHandler(debtSvc)
 	uploads := handlers.NewUploadHandler(productSvc, userSvc, cfg.MaxUploadBytes)
+	emails := handlers.NewEmailHandler(services.NewEmailService(outbox))
 
 	// ---- access levels ----
 	mux := http.NewServeMux()
@@ -256,6 +257,14 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	user("DELETE /api/waiting-list/{id}", waiting.CancelMine)
 	admin("GET /api/admin/waiting-list", waiting.AdminList)
 	admin("PUT /api/admin/waiting-list/{id}/status", waiting.AdminUpdateStatus)
+
+	// Notification email queue (admin)
+	admin("GET /api/admin/emails", emails.List)
+	admin("GET /api/admin/emails/summary", emails.Summary)
+	admin("GET /api/admin/emails/{id}", emails.Get)
+	admin("POST /api/admin/emails/{id}/retry", emails.Retry)
+	admin("POST /api/admin/emails/retry-failed", emails.RetryFailed)
+	admin("DELETE /api/admin/emails/{id}", emails.Cancel)
 
 	// Global middleware, outermost first: recover from panics, log the request,
 	// find the client IP, answer CORS (so even a 429 carries CORS headers and

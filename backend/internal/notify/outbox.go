@@ -51,6 +51,8 @@ func enqueue(ctx context.Context, q database.Querier, kind string, m mail.Messag
 const (
 	batchSize   = 20
 	maxAttempts = 10 // about 2 days of retries with the backoff below
+	// maxAttemptsSQL is maxAttempts for SQL text (admin.go); a test keeps them equal.
+	maxAttemptsSQL = "10"
 	sendTimeout = 30 * time.Second
 )
 
@@ -61,6 +63,8 @@ type WorkerOptions struct {
 	// long after their last charge, then again every period. 0 = off.
 	DebtReminderEvery time.Duration
 	Templates         Templates
+	// KeepSentDays: delivered emails are deleted after this many days (default 30).
+	KeepSentDays int
 }
 
 // Worker delivers queued emails and queues debt reminders.
@@ -78,6 +82,9 @@ func NewWorker(db *sql.DB, mailer mail.Mailer, opts WorkerOptions) *Worker {
 	if opts.Interval <= 0 {
 		opts.Interval = 5 * time.Second
 	}
+	if opts.KeepSentDays <= 0 {
+		opts.KeepSentDays = 30
+	}
 	return &Worker{db: db, mailer: mailer, opts: opts, stop: make(chan struct{})}
 }
 
@@ -88,9 +95,17 @@ func (w *Worker) Start() {
 		defer w.done.Done()
 		ticker := time.NewTicker(w.opts.Interval)
 		defer ticker.Stop()
-		var lastReminders time.Time
+		var lastReminders, lastCleanup time.Time
 		for {
 			ctx := context.Background()
+			if time.Since(lastCleanup) >= time.Hour {
+				lastCleanup = time.Now()
+				if n, err := (&Outbox{db: w.db}).DeleteOldSent(ctx, w.opts.KeepSentDays); err != nil {
+					slog.Error("clean up sent emails", "error", err)
+				} else if n > 0 {
+					slog.Info("deleted old sent emails", "count", n, "older_than_days", w.opts.KeepSentDays)
+				}
+			}
 			// Debt reminders are checked at most every 10 minutes: they are
 			// counted in days, there is no point asking the database more often.
 			if w.opts.DebtReminderEvery > 0 && time.Since(lastReminders) >= min(10*time.Minute, w.opts.DebtReminderEvery) {
