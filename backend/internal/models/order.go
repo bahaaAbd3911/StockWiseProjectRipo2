@@ -79,7 +79,10 @@ type Order struct {
 	BuildingNumber         *string         `json:"building_number"`
 	ApartmentNumber        *string         `json:"apartment_number"`
 	AdditionalInstructions *string         `json:"additional_instructions"`
-	TotalAmount            decimal.Decimal `json:"total_amount"`
+	SubtotalAmount         decimal.Decimal `json:"subtotal_amount"` // items after offers, before the coupon
+	DiscountAmount         decimal.Decimal `json:"discount_amount"` // what the coupon took off
+	CouponCode             *string         `json:"coupon_code"`     // copy of the code used, if any
+	TotalAmount            decimal.Decimal `json:"total_amount"`    // subtotal - discount: what the customer pays
 	Status                 string          `json:"status"`
 	PaymentMethod          string          `json:"payment_method"`
 	PaymentStatus          string          `json:"payment_status"`

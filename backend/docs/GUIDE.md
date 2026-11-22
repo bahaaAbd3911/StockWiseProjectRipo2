@@ -36,9 +36,10 @@ content. Written in Go, data in PostgreSQL.
 |---|---|
 | Accounts | register, confirm email, log in, edit profile and profile picture, change or reset the password, log out everywhere, deactivate |
 | Catalog | products with Arabic names, categories, colors, images (uploaded or by URL), search, filters, sorting |
-| Promotions | timed **offers** (percentage or fixed, on products or a whole category) and **bundles** (several products for one price) |
+| Promotions | timed **offers** (percentage or fixed, on products or a whole category), **coupon codes** typed at checkout, and **bundles** (several products for one price) |
 | Shopping | cart (products and bundles), favorites, saved addresses |
 | Orders | checkout (cash on delivery or **pay later**), tracking, cancelling, admin status workflow |
+| Admin overview | dashboard: sales today / per day / vs the previous period, best sellers, low stock, debts, waiting-list demand, coupon use |
 | Debts | credit limits, an append-only ledger of charges and payments, statements, reminders |
 | Reviews | ratings and comments, "verified purchase", helpful votes |
 | Waiting list | ask to be told when an out-of-stock product comes back |
@@ -397,6 +398,51 @@ multipart upload ─► size cap (MAX_UPLOAD_MB, read straight from the stream, 
   On a tie, the product's own discount wins.
 - Orders store which offer set the price and its name.
 
+### 6.6b Coupon codes
+A code the customer types (e.g. `SAVE10`). Offers are automatic; coupons are
+typed. They **stack on top of offers**: the coupon is taken off the cart
+total *after* each line already has its best price.
+
+| Setting | Meaning |
+|---|---|
+| `code` | 3-40 letters, digits, `-`, `_`; stored upper-case, typed in any case |
+| `discount_type`, `discount_value` | `percentage` (0-100) or `fixed` amount |
+| `scope` | `all` (default: products and bundles), `products` (listed `product_ids`), `category` (one category, any case) |
+| `min_order_amount` | the cart subtotal needed (default 0) |
+| `max_discount` | cap for percentage coupons (e.g. 20% but at most 25.00) |
+| `starts_at`, `ends_at` | optional window |
+| `usage_limit` | total uses (null = unlimited) |
+| `per_customer_limit` | uses per customer - **once by default**; send `null` for unlimited |
+| `is_active` | on/off switch |
+
+How a discount is worked out (`couponRow.evaluate` + `pricing.CouponDiscount`,
+used by both the cart and checkout):
+1. The coupon must be live (active, inside its window, uses left) and the
+   customer must have uses left.
+2. **Eligible amount** = the lines the scope covers, at their prices after
+   offers. Bundles count only for `scope: all` (they already have a special price).
+3. The cart subtotal must reach `min_order_amount` - otherwise the customer is
+   told exactly how much to add ("add 20.00 more...").
+4. Percentage: eligible × value / 100, rounded to cents, capped at
+   `max_discount`. Fixed: the value. Never more than the eligible amount.
+
+Flow:
+- `POST /api/cart/coupon {code}` checks the code against the cart and attaches
+  it, or answers 400 with the reason on the `code` field. It has the strict
+  per-IP rate limit, so codes cannot be guessed by brute force.
+- The cart shows `coupon` (with `discount_amount`, or a `problem` if it
+  stopped working - expired, used up, cart changed), `discount` and `total`.
+- Checkout re-checks the coupon **with its row locked**, so two customers
+  cannot both take the last use. If it no longer works, checkout answers 409
+  instead of silently charging the full price; the customer removes it
+  (`DELETE /api/cart/coupon`) or fixes the cart.
+- The order keeps `subtotal_amount`, `discount_amount`, `coupon_code` (copies:
+  deleting the coupon later changes nothing) and `total_amount` = subtotal -
+  discount (enforced by a database check). Pay later charges the discounted total.
+- Cancelling an order gives the use back.
+- Admins see `times_used` and `total_discount` per coupon and filter by
+  `status` = live, scheduled, expired, disabled, used_up.
+
 ### 6.7 Bundles
 - Several products (with fixed colors) sold together for one price, optionally
   within a time window. Shown with `original_total`, `savings`,
@@ -474,6 +520,30 @@ Sorting: newest, helpful, rating high/low.
 - An admin can also mark a single request `notified` by hand, which sends the
   email too.
 
+### 6.13b Admin dashboard
+`GET /api/admin/dashboard?days=30` (1-366) returns everything an overview
+page needs in one call:
+
+| Section | Contents |
+|---|---|
+| `today`, `period`, `previous_period` | orders, revenue, average order value, items sold (bundle contents included), coupon discounts, cancelled orders, new customers - the previous period has the same length, for "+12% vs last month" |
+| `sales_by_day` | one entry per day of the period, days without orders included (ready for a chart) |
+| `payment_methods` | orders and revenue for cash on delivery and pay later |
+| `orders_by_status` | all orders right now, e.g. how many wait to be confirmed |
+| `best_sellers` | top 10 products by units (alone + inside bundles) |
+| `low_stock` | active products at or below `LOW_STOCK_THRESHOLD` (5), lowest first, with how many customers wait for each; count of out-of-stock products |
+| `debts` | total owed, customers owing, customers over their limit, payments received in the period |
+| `waiting_list` | the most-requested out-of-stock products |
+| `top_coupons` | codes used most in the period, with the discount given |
+| `customers` | active customers, unconfirmed emails, new, and how many ordered in the period |
+
+- **Revenue** = the value of orders placed (after coupons) that were not
+  cancelled: booked sales, whether paid, owed or still to be collected.
+- **Days follow the shop's clock** (`STORE_TIMEZONE`, default `Asia/Amman`):
+  "today" starts at midnight in Amman, not at 03:00 (UTC midnight).
+- All numbers come from **one database snapshot** (a read-only REPEATABLE
+  READ transaction), so they agree with each other even while orders arrive.
+
 ### 6.14 Notification emails and the email queue
 
 | Email | When | How it is sent |
@@ -539,6 +609,7 @@ notify.Worker every EMAIL_POLL_INTERVAL (5 s):
 | `000002_offers_bundles_debts` | offers, offer_products, bundles, bundle_items, cart_bundles, order_bundles, order_bundle_items, users.credit_limit, customer_debt_transactions, `pay_later` payment method, `deferred` payment status |
 | `000003_auth_security` | users.token_version, password_reset_tokens |
 | `000004_email_verification_notifications` | users.email_verified_at (existing users set to verified), users.debt_reminded_at, email_verification_tokens, email_outbox |
+| `000005_coupons_dashboard` | coupons, coupon_products, coupon_redemptions, carts.coupon_id, orders.subtotal_amount / discount_amount / coupon_id / coupon_code (+ check total = subtotal - discount), indexes on orders.created_at and status |
 
 ```powershell
 go run ./cmd/migrate status   # read-only
@@ -568,7 +639,7 @@ comments: [.env.example](../.env.example) (development) and
 | Browser access | `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY` |
 | HTTPS | `TLS_MODE`, `TLS_DOMAINS`, `TLS_EMAIL`, `TLS_CACHE_DIR`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_PORT`, `TLS_HTTP_PORT` |
 | Limits | `RATE_LIMIT_ENABLED` (the numbers are in `config.DefaultRateLimits`) |
-| Shop | `STORE_NAME`, `FRONTEND_URL`, `CURRENCY` |
+| Shop | `STORE_NAME`, `FRONTEND_URL`, `CURRENCY`, `STORE_TIMEZONE`, `LOW_STOCK_THRESHOLD` |
 | Email | `MAIL_DRIVER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` |
 | Links & tokens | `PASSWORD_RESET_URL`, `PASSWORD_RESET_TTL`, `EMAIL_VERIFY_URL`, `EMAIL_VERIFY_TTL`, `REQUIRE_EMAIL_VERIFICATION` |
 | Queue | `EMAIL_POLL_INTERVAL`, `DEBT_REMINDER_INTERVAL` |
@@ -706,6 +777,8 @@ data is never touched. Emails go to an in-memory mailer.
 | `TestDebtNotificationsAndReminders` | payment and adjustment emails, reminder timing, never twice, none when paid |
 | `TestBackInStockEmails` | restock emails waiting customers once, not cancelled ones |
 | `TestImageUploads` | upload, serve, refusals (fake, too big, missing, not admin), deletes remove files, profile pictures |
+| `TestCoupons` | validation, minimum order, case-insensitive codes, stacking on offers, once per customer, cancel gives the use back, category scope, usage limit race between two carts, disabled codes block checkout, order keeps the code after delete |
+| `TestAdminDashboard` | local days, today's figures move with a new order, status counts, low stock, admin only, `days` limits |
 | `TestAdminEmailQueue` | summary, filters, detail, retry one / all failed, cancel, 409 on sent emails, retention clean-up, admin only |
 | `TestMigrateAdoptsExistingDatabase`, `TestCORSPreflightAndHealth` | tooling |
 
@@ -754,7 +827,9 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET / DELETE | `/api/cart` | U | DELETE empties it |
+| GET / DELETE | `/api/cart` | U | DELETE empties it (and removes the coupon) |
+| POST | `/api/cart/coupon` | U + strict limit | `code` → updated cart; 400 with the reason on `fields.code` |
+| DELETE | `/api/cart/coupon` | U | → updated cart |
 | POST | `/api/cart/items` | U | `product_id, quantity?, selected_color?` |
 | PUT / DELETE | `/api/cart/items/{id}` | U | |
 | POST | `/api/cart/bundles` | U | `bundle_id, quantity?` |
@@ -798,6 +873,15 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 | PUT | `/api/admin/customers/{id}/credit-limit` | A |
 | POST | `/api/admin/customers/{id}/debt/payments` | A |
 | POST | `/api/admin/customers/{id}/debt/adjustments` | A |
+
+**Coupons and dashboard (admin)**
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/admin/coupons` | `?status=live\|scheduled\|expired\|disabled\|used_up &search= &limit= &offset=` |
+| POST | `/api/admin/coupons` | body in §6.6b |
+| GET / PUT / DELETE | `/api/admin/coupons/{id}` | PUT replaces (omitted `is_active` keeps the current value); DELETE keeps order history |
+| GET | `/api/admin/dashboard` | `?days=` (1-366, default 30) |
 
 **Email queue (admin)**
 
@@ -844,7 +928,6 @@ log). Lists: `?limit=` (1-100, default 20) and `?offset=` →
 - Uploaded images are stored as sent (after cleaning); there is no automatic
   resizing or thumbnail generation - a CDN with image resizing (Cloudflare
   Images, imgproxy) is the usual next step.
-- Online card payments, coupon codes typed at checkout, SMS notifications and
-  a CAPTCHA are not included.
+- Online card payments, SMS notifications and a CAPTCHA are not included.
 - The email queue has admin endpoints but no screen yet: the frontend admin
   panel needs an "Emails" page using them (section 6.14).

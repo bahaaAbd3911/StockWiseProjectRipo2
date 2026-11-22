@@ -34,6 +34,7 @@ type cartLine struct {
 	Discount        decimal.Decimal
 	Stock           int
 	Active          bool
+	Category        *string // for category coupons
 	Quantity        int
 	Color           *string // what the user picked
 	ColorAr         *string // NULL if that color no longer exists
@@ -49,7 +50,7 @@ func cartLinesSQL(orderBy, lock string) string {
 		SELECT ci.id, ci.product_id, p.name, p.name_ar,
 		       (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id
 		         ORDER BY pi.is_primary DESC, pi.display_order, pi.id LIMIT 1),
-		       p.price, p.discount_value, p.stock, p.is_active,
+		       p.price, p.discount_value, p.stock, p.is_active, p.category,
 		       ci.quantity, ci.selected_color, pc.name_ar, pc.hex_code,
 		       (SELECT COUNT(*) FROM product_colors x WHERE x.product_id = p.id),
 		       ci.added_at
@@ -70,7 +71,7 @@ func loadCartLines(ctx context.Context, q database.Querier, cartID int64, orderB
 	for rows.Next() {
 		var l cartLine
 		if err := rows.Scan(&l.ItemID, &l.ProductID, &l.Name, &l.NameAr, &l.PrimaryImageURL,
-			&l.Price, &l.Discount, &l.Stock, &l.Active,
+			&l.Price, &l.Discount, &l.Stock, &l.Active, &l.Category,
 			&l.Quantity, &l.Color, &l.ColorAr, &l.ColorHex, &l.ColorCount, &l.AddedAt); err != nil {
 			return nil, err
 		}
@@ -185,6 +186,23 @@ func (r *CartRepository) Get(ctx context.Context, userID int64) (models.Cart, er
 			cart.HasUnavailableItems = true
 		}
 		cart.Bundles = append(cart.Bundles, cb)
+	}
+
+	// The coupon, with the same rule checkout uses.
+	cart.Discount, cart.Total = decimal.Zero, cart.Subtotal
+	couponID, err := cartCouponID(ctx, r.db, cartID)
+	if err != nil {
+		return models.Cart{}, err
+	}
+	if couponID != nil {
+		c, err := loadCoupon(ctx, r.db, `c.id = $1`, *couponID, userID, false)
+		if err != nil {
+			return models.Cart{}, err
+		}
+		discount, problem := c.evaluate(lines, bundles)
+		cart.Coupon = c.cartModel(discount, problem)
+		cart.Discount = discount
+		cart.Total = cart.Subtotal.Sub(discount)
 	}
 	return cart, nil
 }
@@ -306,7 +324,7 @@ func (r *CartRepository) RemoveItem(ctx context.Context, userID, itemID int64) e
 	return expectOneRow(res, err, "cart item not found")
 }
 
-// Clear empties the cart: single products and bundles.
+// Clear empties the cart: single products, bundles and the coupon code.
 func (r *CartRepository) Clear(ctx context.Context, userID int64) error {
 	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
@@ -314,9 +332,12 @@ func (r *CartRepository) Clear(ctx context.Context, userID int64) error {
 			WHERE ci.cart_id = c.id AND c.user_id = $1`, userID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM cart_bundles cb USING carts c
-			WHERE cb.cart_id = c.id AND c.user_id = $1`, userID)
+			WHERE cb.cart_id = c.id AND c.user_id = $1`, userID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE carts SET coupon_id = NULL WHERE user_id = $1`, userID)
 		return err
 	})
 }

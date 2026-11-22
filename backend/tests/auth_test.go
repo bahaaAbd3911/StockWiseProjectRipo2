@@ -88,6 +88,8 @@ func testConfig() config.Config {
 		PublicURL:                testPublicURL,
 		Storage:                  storage.Config{Driver: "local", Dir: uploadDir, PublicURL: testPublicURL},
 		MaxUploadBytes:           1 << 20,
+		StoreTimezone:            mustLocation("Asia/Amman"),
+		LowStockThreshold:        5,
 	}
 }
 
@@ -312,4 +314,12 @@ func TestRateLimits(t *testing.T) {
 	if n := len(box.about("hank@example.com", resetSubject)); n != 1 {
 		t.Fatalf("only 1 reset email per hour allowed, got %d", n)
 	}
+}
+
+func mustLocation(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		panic(err)
+	}
+	return loc
 }

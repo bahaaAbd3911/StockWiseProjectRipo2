@@ -115,6 +115,9 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	debts := handlers.NewDebtHandler(debtSvc)
 	uploads := handlers.NewUploadHandler(productSvc, userSvc, cfg.MaxUploadBytes)
 	emails := handlers.NewEmailHandler(services.NewEmailService(outbox))
+	coupons := handlers.NewCouponHandler(services.NewCouponService(repository.NewCouponRepository(db), cartRepo))
+	dashboard := handlers.NewDashboardHandler(services.NewDashboardService(
+		repository.NewDashboardRepository(db), cfg.StoreTimezone, cfg.LowStockThreshold))
 
 	// ---- access levels ----
 	mux := http.NewServeMux()
@@ -132,6 +135,10 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	}
 	admin := func(pattern string, h httpx.HandlerFunc) {
 		mux.Handle(pattern, authenticate(middleware.RequireAdmin(httpx.Handle(h))))
+	}
+	// userLimited: logged in, plus the strict per-IP limit (stops guessing coupon codes).
+	userLimited := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, middleware.RateLimit(authLimit)(authenticate(httpx.Handle(h))))
 	}
 	// verified: logged in AND email confirmed (when REQUIRE_EMAIL_VERIFICATION is on).
 	verified := user
@@ -192,6 +199,8 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	user("PUT /api/cart/items/{id}", carts.UpdateItem)
 	user("DELETE /api/cart/items/{id}", carts.RemoveItem)
 	user("DELETE /api/cart", carts.Clear)
+	userLimited("POST /api/cart/coupon", coupons.Apply)
+	user("DELETE /api/cart/coupon", coupons.Remove)
 
 	// Favorites
 	user("GET /api/favorites", favorites.List)
@@ -257,6 +266,16 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	user("DELETE /api/waiting-list/{id}", waiting.CancelMine)
 	admin("GET /api/admin/waiting-list", waiting.AdminList)
 	admin("PUT /api/admin/waiting-list/{id}/status", waiting.AdminUpdateStatus)
+
+	// Coupons (admin)
+	admin("GET /api/admin/coupons", coupons.AdminList)
+	admin("POST /api/admin/coupons", coupons.Create)
+	admin("GET /api/admin/coupons/{id}", coupons.AdminGet)
+	admin("PUT /api/admin/coupons/{id}", coupons.Update)
+	admin("DELETE /api/admin/coupons/{id}", coupons.Delete)
+
+	// Dashboard (admin)
+	admin("GET /api/admin/dashboard", dashboard.Get)
 
 	// Notification email queue (admin)
 	admin("GET /api/admin/emails", emails.List)

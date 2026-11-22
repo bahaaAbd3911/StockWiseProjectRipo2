@@ -3,8 +3,8 @@
 REST API for the StockWise shop: accounts with email confirmation, a
 bilingual (English/Arabic) catalog with image uploads, cart, favorites,
 addresses, checkout (cash on delivery or pay later), order tracking, reviews,
-a waiting list, timed offers, bundles, customer debts, and email
-notifications - built for production with HTTPS, rate limits and Docker.
+a waiting list, timed offers, coupon codes, bundles, customer debts, an admin
+dashboard, and email notifications - built for production with HTTPS, rate limits and Docker.
 
 **Start here: [docs/GUIDE.md](docs/GUIDE.md)** - the complete guide: how the
 code is organised, the logic of every feature, configuration, HTTPS,

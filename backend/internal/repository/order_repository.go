@@ -24,7 +24,8 @@ func NewOrderRepository(db *sql.DB) *OrderRepository { return &OrderRepository{d
 
 const orderColumns = `
 	o.id, o.user_id, o.address_id, o.recipient_name, o.phone, o.city, o.area, o.street,
-	o.building_number, o.apartment_number, o.additional_instructions, o.total_amount,
+	o.building_number, o.apartment_number, o.additional_instructions,
+	o.subtotal_amount, o.discount_amount, o.coupon_code, o.total_amount,
 	o.status, o.payment_method, o.payment_status, o.created_at, o.updated_at`
 
 // adminOrderColumns adds the customer (requires JOIN users u).
@@ -33,7 +34,8 @@ const adminOrderColumns = orderColumns + `, u.first_name, u.last_name, u.email`
 func scanOrder(s scanner, withCustomer bool) (models.Order, error) {
 	var o models.Order
 	dest := []any{&o.ID, &o.UserID, &o.AddressID, &o.RecipientName, &o.Phone, &o.City, &o.Area, &o.Street,
-		&o.BuildingNumber, &o.ApartmentNumber, &o.AdditionalInstructions, &o.TotalAmount,
+		&o.BuildingNumber, &o.ApartmentNumber, &o.AdditionalInstructions,
+		&o.SubtotalAmount, &o.DiscountAmount, &o.CouponCode, &o.TotalAmount,
 		&o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.CreatedAt, &o.UpdatedAt}
 	var c models.OrderCustomer
 	if withCustomer {
@@ -145,14 +147,35 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			return apperr.Conflict("some items in your cart cannot be ordered - " + strings.Join(problems, "; "))
 		}
 
-		total := decimal.Zero
+		subtotal := decimal.Zero
 		for _, l := range lines {
 			unit, _ := l.unitPrice()
-			total = total.Add(pricing.LineTotal(unit, l.Quantity))
+			subtotal = subtotal.Add(pricing.LineTotal(unit, l.Quantity))
 		}
 		for _, b := range bundles {
-			total = total.Add(pricing.LineTotal(b.bundle.Price, b.Quantity))
+			subtotal = subtotal.Add(pricing.LineTotal(b.bundle.Price, b.Quantity))
 		}
+
+		// Coupon code on the cart: checked again with the coupon row locked,
+		// so two checkouts cannot both take the last use of a limited code.
+		discount := decimal.Zero
+		var coupon *couponRow
+		couponID, err := cartCouponID(ctx, tx, cartID)
+		if err != nil {
+			return err
+		}
+		if couponID != nil {
+			c, err := loadCoupon(ctx, tx, `c.id = $1`, *couponID, userID, true)
+			if err != nil {
+				return err
+			}
+			d, problem := c.evaluate(lines, bundles)
+			if problem != "" {
+				return apperr.Conflict(fmt.Sprintf("the code %s cannot be used: %s. Remove it from your cart to continue", c.Code, problem))
+			}
+			discount, coupon = d, &c
+		}
+		total := subtotal.Sub(discount)
 
 		paymentStatus := models.PaymentPending
 		if method == models.PaymentPayLater {
@@ -162,17 +185,31 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			paymentStatus = models.PaymentDeferred
 		}
 
+		var couponRef *int64
+		var couponCode *string
+		if coupon != nil {
+			couponRef, couponCode = &coupon.ID, &coupon.Code
+		}
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO orders (user_id, address_id, recipient_name, phone, city, area, street,
 			                    building_number, apartment_number, additional_instructions,
-			                    total_amount, status, payment_method, payment_status)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			                    subtotal_amount, discount_amount, total_amount, coupon_id, coupon_code,
+			                    status, payment_method, payment_status)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			RETURNING id`,
 			userID, addr.ID, addr.RecipientName, addr.Phone, addr.City, addr.Area, addr.Street,
 			addr.BuildingNumber, addr.ApartmentNumber, addr.AdditionalInstructions,
-			total, models.OrderPending, method, paymentStatus,
+			subtotal, discount, total, couponRef, couponCode,
+			models.OrderPending, method, paymentStatus,
 		).Scan(&orderID); err != nil {
 			return err
+		}
+		if coupon != nil {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO coupon_redemptions (coupon_id, user_id, order_id, discount_amount) VALUES ($1, $2, $3, $4)`,
+				coupon.ID, userID, orderID, discount); err != nil {
+				return err
+			}
 		}
 
 		for _, l := range lines {
@@ -239,6 +276,9 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM cart_bundles WHERE cart_id = $1`, cartID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE carts SET coupon_id = NULL WHERE id = $1`, cartID); err != nil {
 			return err
 		}
 		return touchCart(ctx, tx, cartID)
@@ -544,6 +584,10 @@ func setStatus(ctx context.Context, tx *sql.Tx, orderID, userID int64, status, p
 			return err
 		}
 		if err := reverseOrderDebt(ctx, tx, userID, orderID); err != nil {
+			return err
+		}
+		// Give the coupon use back (the order keeps the code and discount it had).
+		if _, err := tx.ExecContext(ctx, `DELETE FROM coupon_redemptions WHERE order_id = $1`, orderID); err != nil {
 			return err
 		}
 	}

@@ -20,6 +20,8 @@ import (
 	"ecommerce-backend/internal/mail"
 	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/storage"
+
+	_ "time/tzdata" // time zone data built into the binary (minimal Docker images have none)
 )
 
 // Config holds the validated application settings.
@@ -50,6 +52,10 @@ type Config struct {
 	StoreName   string // STORE_NAME, default StockWise
 	FrontendURL string // FRONTEND_URL, default http://localhost:5173
 	Currency    string // CURRENCY, printed after amounts in emails, e.g. JOD (default none)
+
+	// Admin dashboard.
+	StoreTimezone     *time.Location // STORE_TIMEZONE, default Asia/Amman: when a "day" starts
+	LowStockThreshold int            // LOW_STOCK_THRESHOLD, default 5: products at or below are "low stock"
 
 	// PasswordResetURL is the frontend page that receives ?token=...
 	// PASSWORD_RESET_URL, default FRONTEND_URL/reset-password
@@ -234,6 +240,16 @@ func Load() (Config, error) {
 
 	cfg.StoreName = getenv("STORE_NAME", "StockWise")
 	cfg.Currency = getenv("CURRENCY", "")
+	if loc, err := time.LoadLocation(getenv("STORE_TIMEZONE", "Asia/Amman")); err != nil {
+		bad("STORE_TIMEZONE must be a time zone name such as Asia/Amman, Asia/Riyadh or UTC")
+	} else {
+		cfg.StoreTimezone = loc
+	}
+	if n, err := getint("LOW_STOCK_THRESHOLD", 5); err != nil || n < 0 || n > 10000 {
+		bad("LOW_STOCK_THRESHOLD must be a number between 0 and 10000")
+	} else {
+		cfg.LowStockThreshold = n
+	}
 	cfg.FrontendURL = strings.TrimRight(getenv("FRONTEND_URL", "http://localhost:5173"), "/")
 	if !storage.ValidPublicURL(cfg.FrontendURL) {
 		bad("FRONTEND_URL must be an http(s) URL such as https://shop.example.com")

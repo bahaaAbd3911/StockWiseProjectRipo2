@@ -14,6 +14,9 @@ type Cart struct {
 	Bundles             []CartBundle    `json:"bundles"`
 	ItemCount           int             `json:"item_count"` // sum of quantities (products + bundles)
 	Subtotal            decimal.Decimal `json:"subtotal"`
+	Coupon              *CartCoupon     `json:"coupon"`   // the code typed by the customer, if any
+	Discount            decimal.Decimal `json:"discount"` // what the coupon takes off (0 without one)
+	Total               decimal.Decimal `json:"total"`    // subtotal - discount: what checkout will charge
 	HasUnavailableItems bool            `json:"has_unavailable_items"`
 	UpdatedAt           time.Time       `json:"updated_at"`
 }
