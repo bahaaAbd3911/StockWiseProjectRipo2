@@ -14,6 +14,7 @@ type User struct {
 	Role            string    `json:"role"`
 	IsActive        bool      `json:"-"`
 	TokenVersion    int       `json:"-"` // see auth.Claims.Version
+	EmailVerified   bool      `json:"email_verified"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -66,4 +67,9 @@ type ForgotPasswordRequest struct {
 type ResetPasswordRequest struct {
 	Token       string `json:"token"`
 	NewPassword string `json:"new_password"`
+}
+
+// VerifyEmailRequest: Token comes from the ?token= of the emailed link.
+type VerifyEmailRequest struct {
+	Token string `json:"token"`
 }

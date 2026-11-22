@@ -1,0 +1,15 @@
+# Keep secrets and local junk out of the image build.
+.env
+.env.*
+!.env.example
+!.env.production.example
+.git
+.vscode
+.idea
+*.exe
+*.log
+*.test
+coverage.out
+data/
+certs/
+uploads/

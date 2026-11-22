@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -18,21 +19,37 @@ import (
 	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/routes"
 	"ecommerce-backend/internal/services"
+	"ecommerce-backend/internal/storage"
 )
 
 // ---------- test mailer ----------
 
-// captureMailer keeps emails in memory instead of sending them.
+// captureMailer keeps emails in memory instead of sending them. failNext
+// simulates a mail-provider outage for one address.
 type captureMailer struct {
-	mu   sync.Mutex
-	msgs []mail.Message
+	mu       sync.Mutex
+	msgs     []mail.Message
+	failNext map[string]int
 }
 
 func (c *captureMailer) Send(_ context.Context, m mail.Message) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.failNext[m.To] > 0 {
+		c.failNext[m.To]--
+		return errors.New("simulated SMTP outage")
+	}
 	c.msgs = append(c.msgs, m)
 	return nil
+}
+
+func (c *captureMailer) failFor(addr string, times int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failNext == nil {
+		c.failNext = map[string]int{}
+	}
+	c.failNext[addr] = times
 }
 
 // to returns every email sent to an address.
@@ -50,25 +67,55 @@ func (c *captureMailer) to(addr string) []mail.Message {
 
 var outbox = &captureMailer{}
 
+// testPublicURL is the API address used in uploaded-image URLs during tests.
+const testPublicURL = "http://api.test"
+
 func testConfig() config.Config {
 	return config.Config{
-		JWTSecret:        "integration-test-secret-0123456789abcdef",
-		JWTTTL:           time.Hour,
-		AllowedOrigins:   []string{"http://localhost:5173"},
-		PasswordResetURL: "http://localhost:5173/reset-password",
-		PasswordResetTTL: 30 * time.Minute,
+		JWTSecret:                "integration-test-secret-0123456789abcdef",
+		JWTTTL:                   time.Hour,
+		AllowedOrigins:           []string{"http://localhost:5173"},
+		StoreName:                "TestShop",
+		FrontendURL:              "http://localhost:5173",
+		Currency:                 "JOD",
+		PasswordResetURL:         "http://localhost:5173/reset-password",
+		PasswordResetTTL:         30 * time.Minute,
+		EmailVerifyURL:           "http://localhost:5173/verify-email",
+		EmailVerifyTTL:           48 * time.Hour,
+		RequireEmailVerification: true,
+		EmailPollInterval:        50 * time.Millisecond,
+		DebtReminderEvery:        0, // the debt test triggers reminders itself
+		PublicURL:                testPublicURL,
+		Storage:                  storage.Config{Driver: "local", Dir: uploadDir, PublicURL: testPublicURL},
+		MaxUploadBytes:           1 << 20,
 	}
 }
 
 var tokenInLink = regexp.MustCompile(`token=([A-Za-z0-9_-]+)`)
 
-// waitForMail waits until `n` emails reached addr (reset emails are sent in
-// the background) and returns the token from the newest one.
-func waitForMail(t *testing.T, box *captureMailer, addr string, n int) string {
+// about returns the emails to addr whose subject contains part.
+func (c *captureMailer) about(addr, part string) []mail.Message {
+	var out []mail.Message
+	for _, m := range c.to(addr) {
+		if strings.Contains(m.Subject, part) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+const (
+	resetSubject  = "Reset your password"
+	verifySubject = "Confirm your email"
+)
+
+// waitForMail waits until `n` emails about `subject` reached addr (they are
+// sent in the background) and returns the token from the newest one.
+func waitForMail(t *testing.T, box *captureMailer, addr, subject string, n int) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if msgs := box.to(addr); len(msgs) >= n {
+		if msgs := box.about(addr, subject); len(msgs) >= n {
 			m := tokenInLink.FindStringSubmatch(msgs[len(msgs)-1].Text)
 			if m == nil {
 				t.Fatalf("reset email has no link: %s", msgs[len(msgs)-1].Text)
@@ -77,7 +124,7 @@ func waitForMail(t *testing.T, box *captureMailer, addr string, n int) string {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("expected %d email(s) to %s, got %d", n, addr, len(box.to(addr)))
+	t.Fatalf("expected %d %q email(s) to %s, got %d", n, subject, addr, len(box.about(addr, subject)))
 	return ""
 }
 
@@ -127,8 +174,8 @@ func TestPasswordReset(t *testing.T) {
 	}
 	must(t, 400, "POST", "/api/password/forgot", "", J{"email": "not-an-email"})
 
-	token1 := waitForMail(t, outbox, "erin@example.com", 1)
-	if len(outbox.to("nobody@example.com")) != 0 {
+	token1 := waitForMail(t, outbox, "erin@example.com", resetSubject, 1)
+	if len(outbox.about("nobody@example.com", resetSubject)) != 0 {
 		t.Fatal("no email may be sent for an unknown address")
 	}
 	var leaked int
@@ -139,7 +186,7 @@ func TestPasswordReset(t *testing.T) {
 
 	// Requesting again invalidates the first link.
 	must(t, 200, "POST", "/api/password/forgot", "", J{"email": "erin@example.com"})
-	token2 := waitForMail(t, outbox, "erin@example.com", 2)
+	token2 := waitForMail(t, outbox, "erin@example.com", resetSubject, 2)
 	must(t, 400, "POST", "/api/password/reset", "", J{"token": token1, "new_password": "brandnewpass1"})
 
 	must(t, 400, "POST", "/api/password/reset", "", J{"token": "made-up", "new_password": "brandnewpass1"})
@@ -156,7 +203,7 @@ func TestPasswordReset(t *testing.T) {
 
 	// Expired links do not work.
 	must(t, 200, "POST", "/api/password/forgot", "", J{"email": "erin@example.com"})
-	token3 := waitForMail(t, outbox, "erin@example.com", 3)
+	token3 := waitForMail(t, outbox, "erin@example.com", resetSubject, 3)
 	if _, err := testDB.Exec(`UPDATE password_reset_tokens SET expires_at = NOW() - INTERVAL '1 minute'
 		WHERE user_id = (SELECT id FROM users WHERE email = 'erin@example.com') AND used_at IS NULL`); err != nil {
 		t.Fatal(err)
@@ -168,7 +215,7 @@ func TestPasswordReset(t *testing.T) {
 	must(t, 200, "DELETE", "/api/profile", login(t, "frank@example.com", "password123"), nil)
 	must(t, 200, "POST", "/api/password/forgot", "", J{"email": "frank@example.com"})
 	time.Sleep(300 * time.Millisecond)
-	if len(outbox.to("frank@example.com")) != 0 {
+	if len(outbox.about("frank@example.com", resetSubject)) != 0 {
 		t.Fatal("a deactivated account must not receive a reset link")
 	}
 }
@@ -204,7 +251,10 @@ func TestRateLimits(t *testing.T) {
 		ResetRequests: ratelimit.Rule{Requests: 1, Per: time.Hour},
 	}
 	box := &captureMailer{}
-	app := routes.New(testDB, cfg, box)
+	app, err := routes.New(testDB, cfg, box)
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := httptest.NewServer(app.Handler)
 	defer srv.Close()
 	defer app.Shutdown()
@@ -257,9 +307,9 @@ func TestRateLimits(t *testing.T) {
 			t.Fatalf("forgot-password must always answer the same: %d %v", s, b)
 		}
 	}
-	waitForMail(t, box, "hank@example.com", 1)
+	waitForMail(t, box, "hank@example.com", resetSubject, 1)
 	app.Shutdown()
-	if n := len(box.to("hank@example.com")); n != 1 {
+	if n := len(box.about("hank@example.com", resetSubject)); n != 1 {
 		t.Fatalf("only 1 reset email per hour allowed, got %d", n)
 	}
 }

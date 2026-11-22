@@ -6,16 +6,24 @@ import (
 
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/validators"
 )
 
+// OrderService places orders and moves them through their life cycle. The
+// customer gets an email when the order is received and on every status
+// change (queued in email_outbox, so a mail problem never fails an order).
 type OrderService struct {
 	orders *repository.OrderRepository
+	users  *repository.UserRepository
+	outbox *notify.Outbox
+	tpl    notify.Templates
 }
 
-func NewOrderService(orders *repository.OrderRepository) *OrderService {
-	return &OrderService{orders: orders}
+func NewOrderService(orders *repository.OrderRepository, users *repository.UserRepository,
+	outbox *notify.Outbox, tpl notify.Templates) *OrderService {
+	return &OrderService{orders: orders, users: users, outbox: outbox, tpl: tpl}
 }
 
 // Checkout places an order from the cart and returns the created order.
@@ -36,7 +44,14 @@ func (s *OrderService) Checkout(ctx context.Context, userID int64, req models.Cr
 	if err != nil {
 		return models.Order{}, err
 	}
-	return s.orders.GetForUser(ctx, userID, id)
+	order, err := s.orders.GetForUser(ctx, userID, id)
+	if err != nil {
+		return models.Order{}, err
+	}
+	if to, ok := s.recipient(ctx, userID); ok {
+		s.outbox.EnqueueOrLog(ctx, notify.KindOrderPlaced, s.tpl.OrderPlaced(to, order))
+	}
+	return order, nil
 }
 
 func (s *OrderService) ListMine(ctx context.Context, userID int64) ([]models.Order, error) {
@@ -51,7 +66,12 @@ func (s *OrderService) CancelMine(ctx context.Context, userID, orderID int64) (m
 	if err := s.orders.CancelByUser(ctx, userID, orderID); err != nil {
 		return models.Order{}, err
 	}
-	return s.orders.GetForUser(ctx, userID, orderID)
+	order, err := s.orders.GetForUser(ctx, userID, orderID)
+	if err != nil {
+		return models.Order{}, err
+	}
+	s.statusEmail(ctx, order)
+	return order, nil
 }
 
 // ---------- admin ----------
@@ -75,8 +95,7 @@ func (s *OrderService) Get(ctx context.Context, orderID int64) (models.Order, er
 // UpdateStatus moves an order forward. paymentCollected is only for delivering
 // cash orders: false moves the unpaid amount to the customer's debt.
 func (s *OrderService) UpdateStatus(ctx context.Context, adminID, orderID int64, req models.UpdateOrderStatusRequest) (models.Order, error) {
-	status := req.Status
-	status = strings.ToLower(strings.TrimSpace(status))
+	status := strings.ToLower(strings.TrimSpace(req.Status))
 	if !models.IsOrderStatus(status) {
 		return models.Order{}, validators.FieldError("status",
 			"must be one of: confirmed, processing, shipped, delivered, cancelled")
@@ -87,5 +106,37 @@ func (s *OrderService) UpdateStatus(ctx context.Context, adminID, orderID int64,
 	if err := s.orders.UpdateStatus(ctx, orderID, status, req.PaymentCollected, adminID); err != nil {
 		return models.Order{}, err
 	}
-	return s.orders.Get(ctx, orderID)
+	order, err := s.orders.Get(ctx, orderID)
+	if err != nil {
+		return models.Order{}, err
+	}
+	s.statusEmail(ctx, order)
+	return order, nil
+}
+
+func (s *OrderService) statusEmail(ctx context.Context, order models.Order) {
+	to, ok := s.recipient(ctx, order.UserID)
+	if !ok {
+		return
+	}
+	if msg, ok := s.tpl.OrderStatus(to, order); ok {
+		s.outbox.EnqueueOrLog(ctx, notify.KindOrderStatus, msg)
+	}
+}
+
+// recipient looks up where a customer's emails go. Inactive accounts get none.
+func (s *OrderService) recipient(ctx context.Context, userID int64) (notify.Recipient, bool) {
+	return lookupRecipient(ctx, s.users, userID)
+}
+
+// lookupRecipient is shared by the services that email customers.
+func lookupRecipient(ctx context.Context, users *repository.UserRepository, userID int64) (notify.Recipient, bool) {
+	if users == nil {
+		return notify.Recipient{}, false
+	}
+	u, err := users.GetByID(context.WithoutCancel(ctx), userID)
+	if err != nil || !u.IsActive {
+		return notify.Recipient{}, false
+	}
+	return notify.Recipient{Email: u.Email, FirstName: u.FirstName}, true
 }

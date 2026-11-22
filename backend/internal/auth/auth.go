@@ -21,8 +21,9 @@ const (
 // middleware from the token plus a fresh database lookup, so Role is always the
 // CURRENT role in the database, never something the client claimed.
 type Identity struct {
-	UserID int64
-	Role   string
+	UserID        int64
+	Role          string
+	EmailVerified bool
 }
 
 func (i Identity) IsAdmin() bool { return i.Role == RoleAdmin }
@@ -30,9 +31,10 @@ func (i Identity) IsAdmin() bool { return i.Role == RoleAdmin }
 // AccountInfo is what authentication needs to know about a user, read fresh
 // from the database on every protected request.
 type AccountInfo struct {
-	Role         string
-	Active       bool
-	TokenVersion int // must match the token's "ver" claim
+	Role          string
+	Active        bool
+	TokenVersion  int // must match the token's "ver" claim
+	EmailVerified bool
 }
 
 type ctxKey struct{}

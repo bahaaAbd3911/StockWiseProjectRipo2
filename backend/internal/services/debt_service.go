@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/validators"
 )
@@ -18,11 +19,20 @@ import (
 //   - an admin records money received   -> "payment"
 //   - a charged order is cancelled      -> "reversal" (automatic)
 //   - an admin corrects a mistake       -> "adjustment" (+ or -, note required)
+//
+// The customer is emailed when a payment or adjustment is recorded (and the
+// notify worker sends periodic reminders while a balance is open).
 type DebtService struct {
-	debts *repository.DebtRepository
+	debts  *repository.DebtRepository
+	users  *repository.UserRepository
+	outbox *notify.Outbox
+	tpl    notify.Templates
 }
 
-func NewDebtService(debts *repository.DebtRepository) *DebtService { return &DebtService{debts: debts} }
+func NewDebtService(debts *repository.DebtRepository, users *repository.UserRepository,
+	outbox *notify.Outbox, tpl notify.Templates) *DebtService {
+	return &DebtService{debts: debts, users: users, outbox: outbox, tpl: tpl}
+}
 
 // Statement returns the account summary and a page of its ledger.
 func (s *DebtService) Statement(ctx context.Context, userID int64, limit, offset int) (models.DebtStatement, error) {
@@ -58,7 +68,14 @@ func (s *DebtService) RecordPayment(ctx context.Context, adminID, userID int64, 
 	if err := s.debts.RecordPayment(ctx, adminID, userID, req); err != nil {
 		return models.DebtStatement{}, err
 	}
-	return s.Statement(ctx, userID, 20, 0)
+	st, err := s.Statement(ctx, userID, 20, 0)
+	if err != nil {
+		return st, err
+	}
+	if to, ok := lookupRecipient(ctx, s.users, userID); ok {
+		s.outbox.EnqueueOrLog(ctx, notify.KindDebtPayment, s.tpl.DebtPayment(to, req.Amount, st.Account.Balance))
+	}
+	return st, nil
 }
 
 func (s *DebtService) RecordAdjustment(ctx context.Context, adminID, userID int64, req models.RecordAdjustmentRequest) (models.DebtStatement, error) {
@@ -68,5 +85,12 @@ func (s *DebtService) RecordAdjustment(ctx context.Context, adminID, userID int6
 	if err := s.debts.RecordAdjustment(ctx, adminID, userID, req); err != nil {
 		return models.DebtStatement{}, err
 	}
-	return s.Statement(ctx, userID, 20, 0)
+	st, err := s.Statement(ctx, userID, 20, 0)
+	if err != nil {
+		return st, err
+	}
+	if to, ok := lookupRecipient(ctx, s.users, userID); ok {
+		s.outbox.EnqueueOrLog(ctx, notify.KindDebtAdjustment, s.tpl.DebtAdjustment(to, req.Amount, req.Note, st.Account.Balance))
+	}
+	return st, nil
 }

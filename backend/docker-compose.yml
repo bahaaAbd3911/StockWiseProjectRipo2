@@ -1,0 +1,80 @@
+# Everything on one server: PostgreSQL, migrations, the API and Caddy (HTTPS
+# with automatic Let's Encrypt certificates).
+#
+#   cp .env.production.example .env.production   # fill it in
+#   docker compose --env-file .env.production up -d --build
+#
+# Order on every start: db healthy -> migrate up (exits) -> api -> caddy.
+# Only Caddy is reachable from outside (ports 80/443); the API and the
+# database stay on the internal Docker network.
+#
+# Using a managed database instead (Neon, Supabase, RDS...)? Remove the `db`
+# service and its depends_on, and set DATABASE_URL in .env.production.
+
+name: stockwise
+
+x-api-env: &api-env
+  DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-shop_api}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ecommerce}?sslmode=disable}
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+      POSTGRES_USER: ${POSTGRES_USER:-shop_api}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - db-data:/var/lib/postgresql # PostgreSQL 18 images keep data in /var/lib/postgresql/18/...
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    image: stockwise-api
+    command: ["/app/migrate", "up"]
+    env_file: .env.production
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: stockwise-api
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      <<: *api-env
+      TLS_MODE: "off"     # Caddy does HTTPS
+      TRUST_PROXY: "true" # ...and passes the visitor's IP in X-Forwarded-For
+    volumes:
+      - uploads:/app/data/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env.production}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep this volume
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  db-data:
+  uploads:
+  caddy-data:
+  caddy-config:

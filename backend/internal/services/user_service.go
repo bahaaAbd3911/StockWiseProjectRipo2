@@ -11,9 +11,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
-	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,8 +20,10 @@ import (
 	"ecommerce-backend/internal/auth"
 	"ecommerce-backend/internal/mail"
 	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/repository"
+	"ecommerce-backend/internal/storage"
 	"ecommerce-backend/internal/validators"
 
 	"golang.org/x/crypto/bcrypt"
@@ -30,18 +31,27 @@ import (
 
 // UserServiceOptions are the account-security settings.
 type UserServiceOptions struct {
-	Mailer        mail.Mailer
-	ResetURL      string        // frontend page that receives ?token=...
-	ResetTTL      time.Duration // how long a reset link works
-	LoginFailures *ratelimit.Limiter
-	ResetRequests *ratelimit.Limiter
+	Mailer    mail.Mailer
+	Templates notify.Templates
+
+	ResetURL string        // frontend page that receives ?token=... (password reset)
+	ResetTTL time.Duration // how long a reset link works
+
+	VerifyURL string        // frontend page that receives ?token=... (email confirmation)
+	VerifyTTL time.Duration // how long a confirmation link works
+
+	LoginFailures *ratelimit.Limiter // per email
+	ResetRequests *ratelimit.Limiter // per email
+	VerifyResends *ratelimit.Limiter // per user
+
+	Files storage.Storage // uploaded profile pictures (nil: uploads off)
 }
 
 type UserService struct {
 	users  *repository.UserRepository
 	tokens *auth.TokenManager
 	opts   UserServiceOptions
-	// background tracks reset emails being sent (tests and shutdown wait on it).
+	// background tracks emails being prepared and sent (shutdown and tests wait on it).
 	background sync.WaitGroup
 }
 
@@ -51,6 +61,9 @@ func NewUserService(users *repository.UserRepository, tokens *auth.TokenManager,
 	}
 	if opts.ResetTTL <= 0 {
 		opts.ResetTTL = 30 * time.Minute
+	}
+	if opts.VerifyTTL <= 0 {
+		opts.VerifyTTL = 48 * time.Hour
 	}
 	return &UserService{users: users, tokens: tokens, opts: opts}
 }
@@ -65,6 +78,9 @@ var dummyHash = sync.OnceValue(func() []byte {
 	return h
 })
 
+// Register creates the account and emails a confirmation link. The account
+// works right away (login, cart, favorites); placing an order needs the
+// confirmed email when REQUIRE_EMAIL_VERIFICATION is on.
 func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) (models.User, error) {
 	if err := validators.ValidateRegister(&req); err != nil {
 		return models.User{}, err
@@ -80,7 +96,12 @@ func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) 
 	if err != nil {
 		return models.User{}, err
 	}
-	return s.users.Create(ctx, req, string(hash))
+	user, err := s.users.Create(ctx, req, string(hash))
+	if err != nil {
+		return models.User{}, err
+	}
+	s.inBackground(ctx, "confirmation email", func(bg context.Context) error { return s.sendVerification(bg, user) })
+	return user, nil
 }
 
 // Login checks the password and issues a token. Failed attempts are counted
@@ -170,8 +191,86 @@ func (s *UserService) LogoutEverywhere(ctx context.Context, userID int64) error 
 	return s.users.RevokeTokens(ctx, userID)
 }
 
+// UploadProfileImage replaces the profile picture with an uploaded one. The
+// previous picture's file is removed if it was uploaded too.
+func (s *UserService) UploadProfileImage(ctx context.Context, userID int64, data []byte) (models.User, error) {
+	fileURL, err := saveImage(ctx, s.opts.Files, data)
+	if err != nil {
+		return models.User{}, err
+	}
+	old, err := s.users.SetProfileImage(ctx, userID, &fileURL)
+	if err != nil {
+		_ = s.opts.Files.Delete(context.WithoutCancel(ctx), fileURL)
+		return models.User{}, err
+	}
+	s.deleteFile(ctx, old)
+	return s.users.GetByID(ctx, userID)
+}
+
+// DeleteProfileImage removes the profile picture.
+func (s *UserService) DeleteProfileImage(ctx context.Context, userID int64) (models.User, error) {
+	old, err := s.users.SetProfileImage(ctx, userID, nil)
+	if err != nil {
+		return models.User{}, err
+	}
+	s.deleteFile(ctx, old)
+	return s.users.GetByID(ctx, userID)
+}
+
+func (s *UserService) deleteFile(ctx context.Context, fileURL *string) {
+	if fileURL == nil || s.opts.Files == nil {
+		return
+	}
+	if err := s.opts.Files.Delete(context.WithoutCancel(ctx), *fileURL); err != nil {
+		slog.Error("delete old profile image", "error", err)
+	}
+}
+
 func (s *UserService) Deactivate(ctx context.Context, userID int64) error {
 	return s.users.Deactivate(ctx, userID)
+}
+
+// ---------- email confirmation ----------
+
+// VerifyEmail confirms the address with the token from the emailed link.
+func (s *UserService) VerifyEmail(ctx context.Context, req models.VerifyEmailRequest) error {
+	if req.Token == "" {
+		return validators.FieldError("token", "is required")
+	}
+	return s.users.VerifyEmail(ctx, hashToken(req.Token))
+}
+
+// ResendVerification emails a new confirmation link (the old one stops
+// working). Limited per user, so it cannot be used to flood a mailbox.
+func (s *UserService) ResendVerification(ctx context.Context, userID int64) (string, error) {
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if user.EmailVerified {
+		return "your email address is already confirmed", nil
+	}
+	if ok, wait := s.opts.VerifyResends.Allow(strconv.FormatInt(userID, 10)); !ok {
+		return "", apperr.TooManyRequests("a confirmation email was sent recently; please check your inbox (and spam folder)", wait)
+	}
+	s.inBackground(ctx, "confirmation email", func(bg context.Context) error { return s.sendVerification(bg, user) })
+	return "a new confirmation link has been sent to " + user.Email, nil
+}
+
+func (s *UserService) sendVerification(ctx context.Context, user models.User) error {
+	token, hash, err := newSecretToken()
+	if err != nil {
+		return err
+	}
+	if err := s.users.CreateVerifyToken(ctx, user.ID, hash, time.Now().Add(s.opts.VerifyTTL)); err != nil {
+		return err
+	}
+	link, err := notify.AddQuery(s.opts.VerifyURL, "token", token)
+	if err != nil {
+		return err
+	}
+	to := notify.Recipient{Email: user.Email, FirstName: user.FirstName}
+	return s.opts.Mailer.Send(ctx, s.opts.Templates.VerifyEmail(to, link, int(s.opts.VerifyTTL.Hours())))
 }
 
 // ---------- password reset ----------
@@ -191,15 +290,7 @@ func (s *UserService) RequestPasswordReset(ctx context.Context, req models.Forgo
 	if ok, _ := s.opts.ResetRequests.Allow(req.Email); !ok {
 		return nil
 	}
-	s.background.Add(1)
-	go func() {
-		defer s.background.Done()
-		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		if err := s.sendResetLink(bg, req.Email, ip); err != nil {
-			slog.Error("password reset email failed", "error", err)
-		}
-	}()
+	s.inBackground(ctx, "password reset email", func(bg context.Context) error { return s.sendResetLink(bg, req.Email, ip) })
 	return nil
 }
 
@@ -215,42 +306,19 @@ func (s *UserService) sendResetLink(ctx context.Context, email, ip string) error
 		return nil
 	}
 
-	token, hash, err := newResetToken()
+	token, hash, err := newSecretToken()
 	if err != nil {
 		return err
 	}
-	expires := time.Now().Add(s.opts.ResetTTL)
-	if err := s.users.CreateResetToken(ctx, user.ID, hash, expires, ip); err != nil {
+	if err := s.users.CreateResetToken(ctx, user.ID, hash, time.Now().Add(s.opts.ResetTTL), ip); err != nil {
 		return err
 	}
-	link, err := resetLink(s.opts.ResetURL, token)
+	link, err := notify.AddQuery(s.opts.ResetURL, "token", token)
 	if err != nil {
 		return err
 	}
-	minutes := int(s.opts.ResetTTL.Minutes())
-	return s.opts.Mailer.Send(ctx, mail.Message{
-		To:      user.Email,
-		Subject: "Reset your password / إعادة تعيين كلمة المرور",
-		Text: fmt.Sprintf(`Hello %s,
-
-Someone asked to reset the password of your account. If it was you, open this
-link within %d minutes:
-
-%s
-
-If you did not ask for this, ignore this email - your password stays the same.
-
----
-
-مرحباً %s،
-
-طلب أحدهم إعادة تعيين كلمة المرور لحسابك. إذا كنت أنت، افتح الرابط التالي خلال %d دقيقة:
-
-%s
-
-إذا لم تطلب ذلك، تجاهل هذه الرسالة - لن تتغير كلمة المرور.
-`, user.FirstName, minutes, link, user.FirstName, minutes, link),
-	})
+	to := notify.Recipient{Email: user.Email, FirstName: user.FirstName}
+	return s.opts.Mailer.Send(ctx, s.opts.Templates.PasswordReset(to, link, int(s.opts.ResetTTL.Minutes())))
 }
 
 // ResetPassword finishes a reset with the token from the email link. On
@@ -267,13 +335,29 @@ func (s *UserService) ResetPassword(ctx context.Context, req models.ResetPasswor
 	return s.users.ResetPassword(ctx, hashToken(req.Token), string(hash))
 }
 
-// WaitForBackground blocks until queued reset emails are handled (used by
+// ---------- helpers ----------
+
+// inBackground runs fn after the response has been sent. It gets its own
+// 30-second context, because the request's context ends with the response.
+func (s *UserService) inBackground(ctx context.Context, what string, fn func(context.Context) error) {
+	s.background.Add(1)
+	go func() {
+		defer s.background.Done()
+		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := fn(bg); err != nil {
+			slog.Error(what+" failed", "error", err)
+		}
+	}()
+}
+
+// WaitForBackground blocks until emails being sent are done (used by
 // graceful shutdown and tests).
 func (s *UserService) WaitForBackground() { s.background.Wait() }
 
-// newResetToken returns a random token for the email link and the SHA-256
+// newSecretToken returns a random token for an emailed link and the SHA-256
 // hash that is stored. 32 random bytes cannot be guessed.
-func newResetToken() (token, hash string, err error) {
+func newSecretToken() (token, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", "", err
@@ -285,15 +369,4 @@ func newResetToken() (token, hash string, err error) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
-}
-
-func resetLink(base, token string) (string, error) {
-	u, err := url.Parse(base)
-	if err != nil {
-		return "", err
-	}
-	q := u.Query()
-	q.Set("token", token)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
 }

@@ -14,30 +14,52 @@ import (
 	"ecommerce-backend/internal/httpx"
 	"ecommerce-backend/internal/mail"
 	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/services"
+	"ecommerce-backend/internal/storage"
 )
 
 // App is the assembled application.
 type App struct {
 	Handler http.Handler
-	users   *services.UserService
+	// Notifications delivers queued emails in the background (started by New).
+	Notifications *notify.Worker
+	users         *services.UserService
 }
 
-// Shutdown waits for background work (password-reset emails being sent).
-func (a *App) Shutdown() { a.users.WaitForBackground() }
+// Shutdown stops background work: it waits for account emails being sent and
+// stops the notification worker (unsent emails stay queued for next start).
+func (a *App) Shutdown() {
+	a.users.WaitForBackground()
+	a.Notifications.Stop()
+}
 
-// New builds the whole application. mailer delivers emails (password reset).
-func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
+// New builds the whole application. mailer delivers every email.
+func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	// ---- rate limiters (nil = unlimited, used when limits are disabled) ----
-	var general, authLimit, loginFailures, resetRequests *ratelimit.Limiter
+	var general, authLimit, loginFailures, resetRequests, verifyResends *ratelimit.Limiter
 	if rl := cfg.RateLimits; rl.Enabled {
 		general = ratelimit.New(rl.General)             // per IP, every request
 		authLimit = ratelimit.New(rl.Auth)              // per IP, login/register/password
 		loginFailures = ratelimit.New(rl.LoginFailures) // per email, failed logins
 		resetRequests = ratelimit.New(rl.ResetRequests) // per email, reset emails
+		verifyResends = ratelimit.New(rl.ResetRequests) // per user, "send the confirmation email again"
 	}
+
+	// ---- files and emails ----
+	files, err := storage.New(cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	tpl := notify.Templates{Store: cfg.StoreName, FrontendURL: cfg.FrontendURL, Currency: cfg.Currency}
+	outbox := notify.NewOutbox(db)
+	worker := notify.NewWorker(db, mailer, notify.WorkerOptions{
+		Interval:          cfg.EmailPollInterval,
+		DebtReminderEvery: cfg.DebtReminderEvery,
+		Templates:         tpl,
+	})
 
 	// ---- repositories (SQL) ----
 	userRepo := repository.NewUserRepository(db)
@@ -57,21 +79,26 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
 	userSvc := services.NewUserService(userRepo, tokens, services.UserServiceOptions{
 		Mailer:        mailer,
+		Templates:     tpl,
 		ResetURL:      cfg.PasswordResetURL,
 		ResetTTL:      cfg.PasswordResetTTL,
+		VerifyURL:     cfg.EmailVerifyURL,
+		VerifyTTL:     cfg.EmailVerifyTTL,
 		LoginFailures: loginFailures,
 		ResetRequests: resetRequests,
+		VerifyResends: verifyResends,
+		Files:         files,
 	})
-	productSvc := services.NewProductService(productRepo, catalogRepo)
+	waitingSvc := services.NewWaitingListService(waitingRepo, userRepo, outbox, tpl)
+	productSvc := services.NewProductService(productRepo, catalogRepo, files, waitingSvc)
 	cartSvc := services.NewCartService(cartRepo)
 	favoriteSvc := services.NewFavoriteService(favoriteRepo)
 	addressSvc := services.NewAddressService(addressRepo)
-	orderSvc := services.NewOrderService(orderRepo)
+	orderSvc := services.NewOrderService(orderRepo, userRepo, outbox, tpl)
 	reviewSvc := services.NewReviewService(reviewRepo, catalogRepo)
-	waitingSvc := services.NewWaitingListService(waitingRepo)
 	offerSvc := services.NewOfferService(offerRepo, productRepo)
 	bundleSvc := services.NewBundleService(bundleRepo)
-	debtSvc := services.NewDebtService(debtRepo)
+	debtSvc := services.NewDebtService(debtRepo, userRepo, outbox, tpl)
 
 	// ---- handlers (HTTP) ----
 	health := handlers.NewHealthHandler(db)
@@ -86,6 +113,7 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	offers := handlers.NewOfferHandler(offerSvc)
 	bundles := handlers.NewBundleHandler(bundleSvc)
 	debts := handlers.NewDebtHandler(debtSvc)
+	uploads := handlers.NewUploadHandler(productSvc, userSvc, cfg.MaxUploadBytes)
 
 	// ---- access levels ----
 	mux := http.NewServeMux()
@@ -104,21 +132,37 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	admin := func(pattern string, h httpx.HandlerFunc) {
 		mux.Handle(pattern, authenticate(middleware.RequireAdmin(httpx.Handle(h))))
 	}
+	// verified: logged in AND email confirmed (when REQUIRE_EMAIL_VERIFICATION is on).
+	verified := user
+	if cfg.RequireEmailVerification {
+		verified = func(pattern string, h httpx.HandlerFunc) {
+			mux.Handle(pattern, authenticate(middleware.RequireVerifiedEmail(httpx.Handle(h))))
+		}
+	}
 
 	// Health
 	public("GET /{$}", health.Root)
 	public("GET /api/health", health.Health)
+
+	// Uploaded files (local storage only; with S3 the bucket serves them)
+	if local, ok := files.(*storage.Local); ok {
+		mux.Handle("GET /uploads/{name}", local.Handler())
+	}
 
 	// Account
 	sensitive("POST /api/register", users.Register)
 	sensitive("POST /api/login", users.Login)
 	sensitive("POST /api/password/forgot", users.ForgotPassword)
 	sensitive("POST /api/password/reset", users.ResetPassword)
+	sensitive("POST /api/email/verify", users.VerifyEmail)
+	user("POST /api/email/verify/resend", users.ResendVerification)
 	user("POST /api/logout-all", users.LogoutEverywhere)
 	user("GET /api/profile", users.Profile)
 	user("PUT /api/profile", users.UpdateProfile)
 	user("PUT /api/profile/password", users.ChangePassword)
 	user("DELETE /api/profile", users.Deactivate)
+	user("POST /api/profile/image", uploads.ProfileImage)
+	user("DELETE /api/profile/image", uploads.DeleteProfileImage)
 
 	// Catalog (public)
 	public("GET /api/products", products.List)
@@ -134,7 +178,8 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	admin("POST /api/products", products.Create)
 	admin("PUT /api/products/{id}", products.Update)
 	admin("DELETE /api/products/{id}", products.Delete)
-	admin("POST /api/products/{id}/images", products.AddImage)
+	admin("POST /api/products/{id}/images", products.AddImage) // by URL
+	admin("POST /api/admin/products/{id}/images/upload", uploads.ProductImage)
 	admin("PUT /api/product-images/{id}/primary", products.SetPrimaryImage)
 	admin("DELETE /api/product-images/{id}", products.DeleteImage)
 	admin("POST /api/products/{id}/colors", products.AddColor)
@@ -161,7 +206,7 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	user("PUT /api/addresses/{id}/default", addresses.SetDefault)
 
 	// Orders
-	user("POST /api/orders", orders.Checkout)
+	verified("POST /api/orders", orders.Checkout)
 	user("GET /api/orders", orders.ListMine)
 	user("GET /api/orders/{id}", orders.GetMine)
 	user("POST /api/orders/{id}/cancel", orders.CancelMine)
@@ -219,7 +264,10 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
 	h = middleware.RateLimit(general)(h)
 	h = middleware.CORS(cfg.AllowedOrigins)(h)
 	h = middleware.RealIP(cfg.TrustProxy)(h)
+	h = middleware.SecurityHeaders(cfg.Production())(h) // also on 404/429 and panics
 	h = middleware.Logger(h)
 	h = middleware.Recover(h)
-	return &App{Handler: h, users: userSvc}
+
+	worker.Start()
+	return &App{Handler: h, Notifications: worker, users: userSvc}, nil
 }

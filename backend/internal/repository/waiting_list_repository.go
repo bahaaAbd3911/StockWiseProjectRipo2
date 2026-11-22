@@ -202,3 +202,39 @@ func setWaitingStatus(ctx context.Context, tx *sql.Tx, id int64, status string) 
 		status, id)
 	return err
 }
+
+// MarkProductNotified moves every "waiting" request for a product to
+// "notified" (the product is back in stock) and returns the updated requests,
+// so the customers can be emailed. Each request is notified only once.
+func (r *WaitingListRepository) MarkProductNotified(ctx context.Context, productID int64) ([]models.WaitingListItem, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE waiting_list_items
+		SET status = 'notified', notified_at = COALESCE(notified_at, NOW()), updated_at = NOW()
+		WHERE product_id = $1 AND status = 'waiting'
+		RETURNING id`, productID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	items := make([]models.WaitingListItem, 0, len(ids))
+	for _, id := range ids {
+		item, err := r.get(ctx, id)
+		if err != nil {
+			return items, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}

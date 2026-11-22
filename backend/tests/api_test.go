@@ -29,6 +29,7 @@ import (
 
 	"ecommerce-backend/internal/database"
 	"ecommerce-backend/internal/migrate"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/routes"
 )
 
@@ -36,6 +37,9 @@ var (
 	server  *httptest.Server
 	testDB  *sql.DB
 	baseURL string // INTEGRATION_DATABASE_URL
+
+	uploadDir     string         // temporary folder for uploaded images
+	notifications *notify.Worker // the main server's email worker
 )
 
 func TestMain(m *testing.M) {
@@ -85,8 +89,19 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 
 	// Rate limits are off here (RateLimits zero value); auth_test.go starts a
 	// second server with limits on.
-	app := routes.New(testDB, testConfig(), outbox)
+	dir, err := os.MkdirTemp("", "stockwise-uploads-")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(dir)
+	uploadDir = dir
+
+	app, err := routes.New(testDB, testConfig(), outbox)
+	if err != nil {
+		return 0, err
+	}
 	server = httptest.NewServer(app.Handler)
+	notifications = app.Notifications
 	defer server.Close()
 	defer app.Shutdown()
 	return m.Run(), nil
@@ -140,7 +155,18 @@ func id(v any) string  { return str(obj(v)["id"]) }
 // n turns an ID string back into a JSON number for request bodies.
 func n(s string) json.Number { return json.Number(s) }
 
+// register creates an account whose email counts as confirmed (most tests are
+// not about verification; notify_test.go covers the real flow).
 func register(t *testing.T, email string) {
+	t.Helper()
+	registerUnverified(t, email)
+	if _, err := testDB.Exec(`UPDATE users SET email_verified_at = NOW() WHERE lower(email) = lower($1)`, email); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func registerUnverified(t *testing.T, email string) {
+	t.Helper()
 	must(t, 201, "POST", "/api/register", "", J{
 		"first_name": "Test", "last_name": "User", "email": email,
 		"password": "password123", "phone": "0791234567",

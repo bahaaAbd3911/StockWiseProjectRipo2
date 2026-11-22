@@ -67,7 +67,7 @@ func Authenticate(tokens *auth.TokenManager, accounts AccountLookup) func(http.H
 				return
 			}
 
-			ctx := auth.WithIdentity(r.Context(), auth.Identity{UserID: userID, Role: info.Role})
+			ctx := auth.WithIdentity(r.Context(), auth.Identity{UserID: userID, Role: info.Role, EmailVerified: info.EmailVerified})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -83,6 +83,24 @@ func RequireAdmin(next http.Handler) http.Handler {
 		}
 		if !id.IsAdmin() {
 			httpx.WriteError(w, r, apperr.Forbidden("administrator access required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireVerifiedEmail must run after Authenticate. It stops customers whose
+// email address is not confirmed yet (403), e.g. before placing an order.
+// Admins are never blocked.
+func RequireVerifiedEmail(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := auth.FromContext(r.Context())
+		if !ok {
+			httpx.WriteError(w, r, apperr.Unauthorized("authentication required"))
+			return
+		}
+		if !id.EmailVerified && !id.IsAdmin() {
+			httpx.WriteError(w, r, apperr.Forbidden("please confirm your email address first; we sent you a link (you can ask for a new one in your profile)"))
 			return
 		}
 		next.ServeHTTP(w, r)

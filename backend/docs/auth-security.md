@@ -232,8 +232,8 @@ The numbers of the limits are in `config.DefaultRateLimits()`.
 
 - Counters are in memory; use Redis when running more than one API instance.
 - No CAPTCHA: consider one on login/register if bots become a problem.
-- No email verification at sign-up yet. It can reuse the same token table
-  pattern and mailer.
-- Emails are sent by the API process. If it restarts in the middle, a queued
-  email can be lost and the user simply asks again. A job queue would make
-  this durable.
+- Email confirmation at sign-up now exists (same token pattern); see
+  [GUIDE.md §6.3](GUIDE.md#63-email-confirmation-at-sign-up).
+- Reset emails are sent directly by the API process (not through the email
+  queue, which would store the secret link in the database). If the API
+  restarts in the middle, the user simply asks again.

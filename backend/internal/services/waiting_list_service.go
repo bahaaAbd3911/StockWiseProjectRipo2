@@ -2,23 +2,47 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/notify"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/validators"
 )
 
 // WaitingListService: customers ask to be told when an out-of-stock product
-// comes back; admins work through the list. Marking a request "notified" only
-// records the time - sending the actual email/SMS needs a provider that is not
-// part of this project yet.
+// comes back. They are emailed ("back in stock") automatically when an admin
+// gives the product stock again, or when an admin marks a request "notified".
 type WaitingListService struct {
-	items *repository.WaitingListRepository
+	items  *repository.WaitingListRepository
+	users  *repository.UserRepository
+	outbox *notify.Outbox
+	tpl    notify.Templates
 }
 
-func NewWaitingListService(items *repository.WaitingListRepository) *WaitingListService {
-	return &WaitingListService{items: items}
+func NewWaitingListService(items *repository.WaitingListRepository, users *repository.UserRepository,
+	outbox *notify.Outbox, tpl notify.Templates) *WaitingListService {
+	return &WaitingListService{items: items, users: users, outbox: outbox, tpl: tpl}
+}
+
+// NotifyRestock is called after a product gets stock: every waiting customer
+// is marked notified and emailed. Errors are logged; they never fail the
+// product update that triggered them.
+func (s *WaitingListService) NotifyRestock(ctx context.Context, productID int64) {
+	items, err := s.items.MarkProductNotified(context.WithoutCancel(ctx), productID)
+	if err != nil {
+		slog.Error("waiting list: mark notified", "product_id", productID, "error", err)
+	}
+	for _, it := range items {
+		s.backInStockEmail(ctx, it)
+	}
+}
+
+func (s *WaitingListService) backInStockEmail(ctx context.Context, it models.WaitingListItem) {
+	if to, ok := lookupRecipient(ctx, s.users, it.UserID); ok {
+		s.outbox.EnqueueOrLog(ctx, notify.KindBackInStock, s.tpl.BackInStock(to, it.ProductID, it.ProductName, it.ProductNameAr))
+	}
 }
 
 func (s *WaitingListService) Join(ctx context.Context, userID int64, req models.CreateWaitingListRequest) (models.WaitingListItem, error) {
@@ -53,5 +77,12 @@ func (s *WaitingListService) UpdateStatus(ctx context.Context, id int64, status 
 		return models.WaitingListItem{}, validators.FieldError("status",
 			"must be one of: waiting, notified, fulfilled, cancelled")
 	}
-	return s.items.UpdateStatus(ctx, id, status)
+	item, err := s.items.UpdateStatus(ctx, id, status)
+	if err != nil {
+		return item, err
+	}
+	if status == models.WaitingNotified {
+		s.backInStockEmail(ctx, item)
+	}
+	return item, nil
 }

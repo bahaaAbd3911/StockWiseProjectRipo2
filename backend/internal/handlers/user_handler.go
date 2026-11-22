@@ -121,3 +121,24 @@ func (h *UserHandler) Deactivate(w http.ResponseWriter, r *http.Request) error {
 	}
 	return httpx.Message(w, http.StatusOK, "account deactivated")
 }
+
+// VerifyEmail: POST /api/email/verify {token}
+func (h *UserHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) error {
+	var req models.VerifyEmailRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if err := h.users.VerifyEmail(r.Context(), req); err != nil {
+		return err
+	}
+	return httpx.Message(w, http.StatusOK, "thank you, your email address is confirmed")
+}
+
+// ResendVerification: POST /api/email/verify/resend (logged in)
+func (h *UserHandler) ResendVerification(w http.ResponseWriter, r *http.Request) error {
+	msg, err := h.users.ResendVerification(r.Context(), auth.UserID(r.Context()))
+	if err != nil {
+		return err
+	}
+	return httpx.Message(w, http.StatusOK, msg)
+}

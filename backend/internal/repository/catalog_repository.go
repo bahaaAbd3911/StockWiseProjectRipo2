@@ -110,14 +110,15 @@ func (r *CatalogRepository) SetPrimaryImage(ctx context.Context, imageID int64) 
 }
 
 // DeleteImage removes an image. If it was the primary one, the next image (by
-// display_order) is promoted so the product keeps a cover picture.
-func (r *CatalogRepository) DeleteImage(ctx context.Context, imageID int64) error {
-	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+// display_order) is promoted so the product keeps a cover picture. It returns
+// the deleted image's URL so an uploaded file can be removed too.
+func (r *CatalogRepository) DeleteImage(ctx context.Context, imageID int64) (imageURL string, err error) {
+	err = database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
 		var productID int64
 		var wasPrimary bool
 		if err := tx.QueryRowContext(ctx,
-			`DELETE FROM product_images WHERE id = $1 RETURNING product_id, is_primary`, imageID,
-		).Scan(&productID, &wasPrimary); err != nil {
+			`DELETE FROM product_images WHERE id = $1 RETURNING product_id, is_primary, image_url`, imageID,
+		).Scan(&productID, &wasPrimary, &imageURL); err != nil {
 			return apperr.FromDB(err, "image not found")
 		}
 		if !wasPrimary {
@@ -129,6 +130,7 @@ func (r *CatalogRepository) DeleteImage(ctx context.Context, imageID int64) erro
 			            ORDER BY display_order, id LIMIT 1)`, productID)
 		return err
 	})
+	return imageURL, err
 }
 
 // ---------- colors ----------
