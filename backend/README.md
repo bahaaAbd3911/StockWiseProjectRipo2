@@ -7,6 +7,7 @@ reviews with helpful votes, a waiting list for out-of-stock products, timed
 
 - How the code is organised and why: [docs/architecture.md](docs/architecture.md)
 - Offers, bundles and debts in detail: [docs/offers-bundles-debts.md](docs/offers-bundles-debts.md)
+- Rate limiting, login revocation and password reset: [docs/auth-security.md](docs/auth-security.md)
 
 ## Requirements
 
@@ -57,7 +58,9 @@ go test ./tests -v
 ## Conventions for the frontend
 
 - **Auth:** `POST /api/login` returns `{user, token, expires_at}`. Send
-  `Authorization: Bearer <token>` on protected routes.
+  `Authorization: Bearer <token>` on protected routes. A 401 saying the login
+  was revoked means the token was invalidated (password change/reset or "log
+  out everywhere"): delete it and show the login page.
 - **Errors** are always JSON: `{"error": "message"}`. Validation errors also
   carry per-field messages: `{"error": "validation failed", "fields": {"email": "is required"}}`.
 
@@ -68,6 +71,7 @@ go test ./tests -v
   | 403 | Logged in but not an admin |
   | 404 | Not found (or not yours) |
   | 409 | Valid request but the current state forbids it (out of stock, already reviewed, wrong order status, ...) |
+  | 429 | Rate limit reached - wait `Retry-After` seconds |
   | 500 | Unexpected server error (details are only in the server log) |
 
 - **Money** is sent as JSON numbers with at most 2 decimals (e.g. `19.99`).
@@ -87,11 +91,14 @@ Access: **P** public · **U** logged-in user · **A** admin.
 |---|---|---|---|
 | GET | `/` | P | Process is up |
 | GET | `/api/health` | P | Also pings the database |
-| POST | `/api/register` | P | `first_name, last_name, email, password (8-72), phone, profile_image_url?` |
-| POST | `/api/login` | P | `email, password` (email is case-insensitive) |
+| POST | `/api/register` | P | `first_name, last_name, email, password (8-72), phone, profile_image_url?` (rate-limited) |
+| POST | `/api/login` | P | `email, password` (email is case-insensitive; rate-limited per IP and per email) |
+| POST | `/api/password/forgot` | P | `email` - always the same reply; emails a reset link if the account exists |
+| POST | `/api/password/reset` | P | `token, new_password` - token from the emailed link; logs out every device |
+| POST | `/api/logout-all` | U | Revokes every token of the account, including this one |
 | GET | `/api/profile` | U | |
 | PUT | `/api/profile` | U | `first_name, last_name, phone, profile_image_url?` |
-| PUT | `/api/profile/password` | U | `current_password, new_password` |
+| PUT | `/api/profile/password` | U | `current_password, new_password` → `{message, token, expires_at}`: other devices are logged out, use the new token |
 | DELETE | `/api/profile` | U | Deactivates the account (soft delete) |
 
 ### Catalog
@@ -225,8 +232,7 @@ offer); discounts never stack.
 - Coupon codes typed at checkout (offers are automatic only)
 - Online payments (cash on delivery and pay later only)
 - Image upload (the API stores image URLs)
-- Email/SMS sending (password reset, waiting-list notifications)
-- Logging out other devices after a password change: tokens stay valid until
-  they expire (`JWT_TTL`). Fixing this needs a new column such as
-  `users.password_changed_at`.
-- Rate limiting on login/register (do this at the reverse proxy)
+- Email/SMS notifications other than password reset (order updates, waiting
+  list, debt reminders) - the `mail` package is ready to be reused
+- Email verification at sign-up, CAPTCHA
+- Shared rate-limit storage (Redis) for running several API instances

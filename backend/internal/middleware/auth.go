@@ -14,10 +14,10 @@ import (
 	"ecommerce-backend/internal/httpx"
 )
 
-// AccountLookup returns the current role and active flag of a user. The user
-// repository implements it; tests can pass a fake.
+// AccountLookup returns a user's current auth.AccountInfo (sql.ErrNoRows if the
+// user does not exist). The user repository implements it; tests use a fake.
 type AccountLookup interface {
-	AuthInfo(ctx context.Context, userID int64) (role string, active bool, err error)
+	AuthInfo(ctx context.Context, userID int64) (auth.AccountInfo, error)
 }
 
 // Authenticate requires a valid "Authorization: Bearer <token>" header.
@@ -28,7 +28,10 @@ type AccountLookup interface {
 //  3. look the user up in the database: they must still exist and be active
 //     (so deactivating an account locks it out immediately, even with a valid
 //     token) and we read their CURRENT role
-//  4. store auth.Identity in the request context for the handlers
+//  4. the token's version must equal users.token_version: changing or
+//     resetting the password, or "log out everywhere", raises the version and
+//     so revokes every token issued before
+//  5. store auth.Identity in the request context for the handlers
 func Authenticate(tokens *auth.TokenManager, accounts AccountLookup) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,14 +47,14 @@ func Authenticate(tokens *auth.TokenManager, accounts AccountLookup) func(http.H
 				return
 			}
 
-			userID, err := tokens.Parse(token)
+			userID, version, err := tokens.Parse(token)
 			if err != nil {
 				httpx.WriteError(w, r, apperr.Unauthorized("invalid or expired token"))
 				return
 			}
 
-			role, active, err := accounts.AuthInfo(r.Context(), userID)
-			if errors.Is(err, sql.ErrNoRows) || (err == nil && !active) {
+			info, err := accounts.AuthInfo(r.Context(), userID)
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && !info.Active) {
 				httpx.WriteError(w, r, apperr.Unauthorized("account is inactive or does not exist"))
 				return
 			}
@@ -59,8 +62,12 @@ func Authenticate(tokens *auth.TokenManager, accounts AccountLookup) func(http.H
 				httpx.WriteError(w, r, err)
 				return
 			}
+			if version != info.TokenVersion {
+				httpx.WriteError(w, r, apperr.Unauthorized("this login has been revoked; please log in again"))
+				return
+			}
 
-			ctx := auth.WithIdentity(r.Context(), auth.Identity{UserID: userID, Role: role})
+			ctx := auth.WithIdentity(r.Context(), auth.Identity{UserID: userID, Role: info.Role})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

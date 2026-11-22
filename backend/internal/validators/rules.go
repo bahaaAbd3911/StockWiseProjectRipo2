@@ -206,3 +206,21 @@ func ValidateReview(in *models.ReviewInput) error {
 	c.Add(in.Rating >= 1 && in.Rating <= 5, "rating", "must be between 1 and 5")
 	return c.Err()
 }
+
+func ValidateForgotPassword(req *models.ForgotPasswordRequest) error {
+	req.Email = NormalizeEmail(req.Email)
+	c := New()
+	c.Required("email", req.Email)
+	c.Add(req.Email == "" || IsEmail(req.Email), "email", "must be a valid email address")
+	c.MaxLen("email", req.Email, 255)
+	return c.Err()
+}
+
+func ValidateResetPassword(req *models.ResetPasswordRequest) error {
+	Trim(&req.Token)
+	c := New()
+	c.Add(req.Token != "", "token", "is required")
+	c.Add(len(req.Token) <= 200, "token", "is invalid")
+	checkPassword(c, "new_password", req.NewPassword)
+	return c.Err()
+}

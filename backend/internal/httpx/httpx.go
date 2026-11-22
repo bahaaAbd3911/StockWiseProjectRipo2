@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -106,6 +108,8 @@ func StatusFor(kind apperr.Kind) int {
 		return http.StatusNotFound
 	case apperr.KindConflict:
 		return http.StatusConflict
+	case apperr.KindTooManyRequests:
+		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
 	}
@@ -116,6 +120,9 @@ func StatusFor(kind apperr.Kind) int {
 // SQL details never leak.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	if e, ok := apperr.As(err); ok {
+		if e.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.RetryAfter.Seconds()))))
+		}
 		_ = JSON(w, StatusFor(e.Kind), errorBody{Error: e.Message, Fields: e.Fields})
 		return
 	}
@@ -158,4 +165,38 @@ func Pagination(r *http.Request) (limit, offset int, err error) {
 		return 0, 0, err
 	}
 	return limit, offset, nil
+}
+
+type clientIPKey struct{}
+
+// WithClientIP stores the caller's IP in the context (see middleware.RealIP).
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, clientIPKey{}, ip)
+}
+
+// ClientIP returns the caller's IP stored by middleware.RealIP, or "".
+func ClientIP(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	return ip
+}
+
+// RemoteIP extracts the client IP of a request. With trustProxy it uses the
+// first address in X-Forwarded-For (or X-Real-IP), as set by a reverse proxy.
+func RemoteIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			first, _, _ := strings.Cut(xff, ",")
+			if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
+				return ip.String()
+			}
+		}
+		if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
+			return ip.String()
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

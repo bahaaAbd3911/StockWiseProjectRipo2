@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"ecommerce-backend/internal/config"
 	"ecommerce-backend/internal/database"
 	"ecommerce-backend/internal/migrate"
 	"ecommerce-backend/internal/routes"
@@ -84,12 +83,12 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 		return 0, fmt.Errorf("apply migrations: %w", err)
 	}
 
-	server = httptest.NewServer(routes.New(testDB, config.Config{
-		JWTSecret:      "integration-test-secret-0123456789abcdef",
-		JWTTTL:         time.Hour,
-		AllowedOrigins: []string{"http://localhost:5173"},
-	}))
+	// Rate limits are off here (RateLimits zero value); auth_test.go starts a
+	// second server with limits on.
+	app := routes.New(testDB, testConfig(), outbox)
+	server = httptest.NewServer(app.Handler)
 	defer server.Close()
+	defer app.Shutdown()
 	return m.Run(), nil
 }
 

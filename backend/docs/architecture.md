@@ -83,12 +83,24 @@ Anything else stays an unknown error and becomes a 500.
 - `Identity{UserID, Role}` is stored in the request context by the middleware.
   Handlers call `auth.UserID(r.Context())`.
 
+### `internal/ratelimit/` and `internal/mail/`
+- `ratelimit.go`: in-memory token-bucket limiter used per IP and per email.
+- `mail.go`: the `Mailer` interface with a log driver (development) and an
+  SMTP driver (production).
+
+Both are explained in [auth-security.md](auth-security.md).
+
 ### `internal/middleware/`
 - `auth.go`
   - `Authenticate` checks the Bearer token, then asks the database for the
     user's **current** role and `is_active`. A deactivated account is locked
     out immediately, and the role can never come from the client.
+  - It also refuses tokens whose `ver` claim is older than
+    `users.token_version` (revoked by a password change/reset or "log out
+    everywhere").
   - `RequireAdmin` returns 403 unless the role is `admin`.
+- `ratelimit.go`: `RealIP` puts the client IP in the context; `RateLimit`
+  answers 429 when an IP used up its budget.
 - `cors.go` lets the frontend origin(s) call the API and answers browser
   preflight requests.
 - `logging.go`: `Logger` writes one line per request; `Recover` turns a panic
@@ -208,7 +220,8 @@ Explained in full - rules, tables, endpoints, examples - in
 [offers-bundles-debts.md](offers-bundles-debts.md).
 
 ### Authentication on every protected request
-Token → signature/expiry check → database lookup (`is_active`, `role`) →
+Token → signature/expiry check → database lookup (`is_active`, `role`,
+`token_version` must match the token) →
 `Identity` in the context → handler uses `auth.UserID`. Every repository query
 on personal data has `WHERE user_id = $n`, so asking for someone else's order or
 address returns 404, as if it didn't exist.

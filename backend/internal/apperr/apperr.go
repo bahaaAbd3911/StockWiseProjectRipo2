@@ -10,6 +10,7 @@ package apperr
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -18,11 +19,12 @@ import (
 type Kind int
 
 const (
-	KindInvalid      Kind = iota + 1 // 400 the request data is wrong
-	KindUnauthorized                 // 401 not logged in / bad token
-	KindForbidden                    // 403 logged in but not allowed
-	KindNotFound                     // 404 the record does not exist (for this user)
-	KindConflict                     // 409 valid request, but the current state forbids it
+	KindInvalid         Kind = iota + 1 // 400 the request data is wrong
+	KindUnauthorized                    // 401 not logged in / bad token
+	KindForbidden                       // 403 logged in but not allowed
+	KindNotFound                        // 404 the record does not exist (for this user)
+	KindConflict                        // 409 valid request, but the current state forbids it
+	KindTooManyRequests                 // 429 rate limit reached; see RetryAfter
 )
 
 // Error is an expected, client-facing error.
@@ -32,6 +34,8 @@ type Error struct {
 	// Fields optionally holds per-field validation messages, e.g.
 	// {"email": "must be a valid email address"}.
 	Fields map[string]string
+	// RetryAfter is set on TooManyRequests errors (sent as the Retry-After header).
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -41,6 +45,11 @@ func Unauthorized(msg string) error { return &Error{Kind: KindUnauthorized, Mess
 func Forbidden(msg string) error    { return &Error{Kind: KindForbidden, Message: msg} }
 func NotFound(msg string) error     { return &Error{Kind: KindNotFound, Message: msg} }
 func Conflict(msg string) error     { return &Error{Kind: KindConflict, Message: msg} }
+
+// TooManyRequests says "slow down, try again after retryAfter".
+func TooManyRequests(msg string, retryAfter time.Duration) error {
+	return &Error{Kind: KindTooManyRequests, Message: msg, RetryAfter: retryAfter}
+}
 
 // Validation returns an Invalid error carrying per-field messages.
 func Validation(fields map[string]string) error {

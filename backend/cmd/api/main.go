@@ -17,6 +17,7 @@ import (
 
 	"ecommerce-backend/internal/config"
 	"ecommerce-backend/internal/database"
+	"ecommerce-backend/internal/mail"
 	"ecommerce-backend/internal/routes"
 
 	"github.com/joho/godotenv"
@@ -51,9 +52,15 @@ func run() error {
 	}
 	defer db.Close()
 
+	mailer, err := mail.New(cfg.Mail)
+	if err != nil {
+		return err
+	}
+	app := routes.New(db, cfg, mailer)
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes.New(db, cfg),
+		Handler:           app.Handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -62,7 +69,8 @@ func run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		slog.Info("API listening", "addr", srv.Addr, "cors_origins", cfg.AllowedOrigins)
+		slog.Info("API listening", "addr", srv.Addr, "cors_origins", cfg.AllowedOrigins,
+			"rate_limits", cfg.RateLimits.Enabled, "mail_driver", cfg.Mail.Driver)
 		serverErr <- srv.ListenAndServe()
 	}()
 
@@ -77,5 +85,7 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	app.Shutdown() // let queued password-reset emails finish
+	return err
 }

@@ -72,3 +72,20 @@ func TestDecodeJSON(t *testing.T) {
 		t.Error("oversized body should be a 400")
 	}
 }
+
+func TestRemoteIPIgnoresHeadersUnlessTrusted(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "203.0.113.7:51234"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+	if ip := RemoteIP(r, false); ip != "203.0.113.7" {
+		t.Fatalf("without a trusted proxy the header must be ignored (it can be faked): got %s", ip)
+	}
+	if ip := RemoteIP(r, true); ip != "1.2.3.4" {
+		t.Fatalf("behind a trusted proxy the first forwarded address is the client: got %s", ip)
+	}
+	r.Header.Set("X-Forwarded-For", "garbage")
+	r.Header.Set("X-Real-IP", "5.6.7.8")
+	if ip := RemoteIP(r, true); ip != "5.6.7.8" {
+		t.Fatalf("invalid X-Forwarded-For should fall back to X-Real-IP: got %s", ip)
+	}
+}

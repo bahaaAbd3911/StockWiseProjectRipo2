@@ -12,13 +12,33 @@ import (
 	"ecommerce-backend/internal/config"
 	"ecommerce-backend/internal/handlers"
 	"ecommerce-backend/internal/httpx"
+	"ecommerce-backend/internal/mail"
 	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/services"
 )
 
-// New returns the root HTTP handler.
-func New(db *sql.DB, cfg config.Config) http.Handler {
+// App is the assembled application.
+type App struct {
+	Handler http.Handler
+	users   *services.UserService
+}
+
+// Shutdown waits for background work (password-reset emails being sent).
+func (a *App) Shutdown() { a.users.WaitForBackground() }
+
+// New builds the whole application. mailer delivers emails (password reset).
+func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) *App {
+	// ---- rate limiters (nil = unlimited, used when limits are disabled) ----
+	var general, authLimit, loginFailures, resetRequests *ratelimit.Limiter
+	if rl := cfg.RateLimits; rl.Enabled {
+		general = ratelimit.New(rl.General)             // per IP, every request
+		authLimit = ratelimit.New(rl.Auth)              // per IP, login/register/password
+		loginFailures = ratelimit.New(rl.LoginFailures) // per email, failed logins
+		resetRequests = ratelimit.New(rl.ResetRequests) // per email, reset emails
+	}
+
 	// ---- repositories (SQL) ----
 	userRepo := repository.NewUserRepository(db)
 	productRepo := repository.NewProductRepository(db)
@@ -35,7 +55,13 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 
 	// ---- services (business rules) ----
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
-	userSvc := services.NewUserService(userRepo, tokens)
+	userSvc := services.NewUserService(userRepo, tokens, services.UserServiceOptions{
+		Mailer:        mailer,
+		ResetURL:      cfg.PasswordResetURL,
+		ResetTTL:      cfg.PasswordResetTTL,
+		LoginFailures: loginFailures,
+		ResetRequests: resetRequests,
+	})
 	productSvc := services.NewProductService(productRepo, catalogRepo)
 	cartSvc := services.NewCartService(cartRepo)
 	favoriteSvc := services.NewFavoriteService(favoriteRepo)
@@ -68,6 +94,10 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	public := func(pattern string, h httpx.HandlerFunc) {
 		mux.Handle(pattern, httpx.Handle(h))
 	}
+	// sensitive: public, plus the strict per-IP limit for account endpoints.
+	sensitive := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, middleware.RateLimit(authLimit)(httpx.Handle(h)))
+	}
 	user := func(pattern string, h httpx.HandlerFunc) {
 		mux.Handle(pattern, authenticate(httpx.Handle(h)))
 	}
@@ -80,8 +110,11 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	public("GET /api/health", health.Health)
 
 	// Account
-	public("POST /api/register", users.Register)
-	public("POST /api/login", users.Login)
+	sensitive("POST /api/register", users.Register)
+	sensitive("POST /api/login", users.Login)
+	sensitive("POST /api/password/forgot", users.ForgotPassword)
+	sensitive("POST /api/password/reset", users.ResetPassword)
+	user("POST /api/logout-all", users.LogoutEverywhere)
 	user("GET /api/profile", users.Profile)
 	user("PUT /api/profile", users.UpdateProfile)
 	user("PUT /api/profile/password", users.ChangePassword)
@@ -180,6 +213,13 @@ func New(db *sql.DB, cfg config.Config) http.Handler {
 	admin("PUT /api/admin/waiting-list/{id}/status", waiting.AdminUpdateStatus)
 
 	// Global middleware, outermost first: recover from panics, log the request,
-	// then answer CORS before routing.
-	return middleware.Recover(middleware.Logger(middleware.CORS(cfg.AllowedOrigins)(mux)))
+	// find the client IP, answer CORS (so even a 429 carries CORS headers and
+	// the browser can read it), apply the general per-IP limit, then route.
+	var h http.Handler = mux
+	h = middleware.RateLimit(general)(h)
+	h = middleware.CORS(cfg.AllowedOrigins)(h)
+	h = middleware.RealIP(cfg.TrustProxy)(h)
+	h = middleware.Logger(h)
+	h = middleware.Recover(h)
+	return &App{Handler: h, users: userSvc}
 }

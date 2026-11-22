@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"ecommerce-backend/internal/apperr"
+	"ecommerce-backend/internal/auth"
 	"ecommerce-backend/internal/models"
 )
 
@@ -16,14 +17,14 @@ func NewUserRepository(db *sql.DB) *UserRepository { return &UserRepository{db: 
 
 // users.created_at / updated_at are nullable in the schema, hence COALESCE.
 const userColumns = `
-	id, first_name, last_name, email, phone, profile_image_url, role, is_active,
+	id, first_name, last_name, email, phone, profile_image_url, role, is_active, token_version,
 	COALESCE(created_at, NOW()), COALESCE(updated_at, NOW())`
 
 func scanUser(s scanner, extra ...any) (models.User, error) {
 	var u models.User
 	dest := append([]any{
 		&u.ID, &u.FirstName, &u.LastName, &u.Email, &u.Phone, &u.ProfileImageURL,
-		&u.Role, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
+		&u.Role, &u.IsActive, &u.TokenVersion, &u.CreatedAt, &u.UpdatedAt,
 	}, extra...)
 	err := s.Scan(dest...)
 	return u, err
@@ -90,9 +91,21 @@ func (r *UserRepository) PasswordHash(ctx context.Context, id int64) (string, er
 	return hash, apperr.FromDB(err, "user not found")
 }
 
-func (r *UserRepository) UpdatePassword(ctx context.Context, id int64, hash string) error {
+// UpdatePassword sets a new hash AND raises token_version, which logs the user
+// out on every device. It returns the new version so the caller can issue a
+// fresh token for the current device.
+func (r *UserRepository) UpdatePassword(ctx context.Context, id int64, hash string) (int, error) {
+	var version int
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE users SET password_hash = $1, token_version = token_version + 1, updated_at = NOW()
+		WHERE id = $2 RETURNING token_version`, hash, id).Scan(&version)
+	return version, apperr.FromDB(err, "user not found")
+}
+
+// RevokeTokens raises token_version: every token issued so far stops working.
+func (r *UserRepository) RevokeTokens(ctx context.Context, id int64) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, hash, id)
+		`UPDATE users SET token_version = token_version + 1, updated_at = NOW() WHERE id = $1`, id)
 	return expectOneRow(res, err, "user not found")
 }
 
@@ -106,11 +119,11 @@ func (r *UserRepository) Deactivate(ctx context.Context, id int64) error {
 
 // AuthInfo is used by the authentication middleware on every protected request.
 // It returns sql.ErrNoRows unchanged when the user does not exist.
-func (r *UserRepository) AuthInfo(ctx context.Context, id int64) (string, bool, error) {
-	var role string
-	var active bool
-	err := r.db.QueryRowContext(ctx, `SELECT role, is_active FROM users WHERE id = $1`, id).Scan(&role, &active)
-	return role, active, err
+func (r *UserRepository) AuthInfo(ctx context.Context, id int64) (auth.AccountInfo, error) {
+	var a auth.AccountInfo
+	err := r.db.QueryRowContext(ctx,
+		`SELECT role, is_active, token_version FROM users WHERE id = $1`, id).Scan(&a.Role, &a.Active, &a.TokenVersion)
+	return a, err
 }
 
 // expectOneRow turns "0 rows affected" into a NotFound error.

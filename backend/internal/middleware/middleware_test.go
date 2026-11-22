@@ -12,26 +12,29 @@ import (
 )
 
 type fakeAccounts map[int64]struct {
-	role   string
-	active bool
+	role    string
+	active  bool
+	version int
 }
 
-func (f fakeAccounts) AuthInfo(_ context.Context, id int64) (string, bool, error) {
+func (f fakeAccounts) AuthInfo(_ context.Context, id int64) (auth.AccountInfo, error) {
 	a, ok := f[id]
 	if !ok {
-		return "", false, sql.ErrNoRows
+		return auth.AccountInfo{}, sql.ErrNoRows
 	}
-	return a.role, a.active, nil
+	return auth.AccountInfo{Role: a.role, Active: a.active, TokenVersion: a.version}, nil
 }
 
 func TestAuthenticateAndRequireAdmin(t *testing.T) {
 	tokens := auth.NewTokenManager("0123456789abcdef0123456789abcdef", time.Hour)
 	accounts := fakeAccounts{
-		1: {auth.RoleCustomer, true},
-		2: {auth.RoleAdmin, true},
-		3: {auth.RoleCustomer, false},
+		1: {auth.RoleCustomer, true, 0},
+		2: {auth.RoleAdmin, true, 0},
+		3: {auth.RoleCustomer, false, 0},
+		4: {auth.RoleCustomer, true, 2}, // logged out everywhere twice
 	}
-	tok := func(id int64) string { s, _, _ := tokens.Issue(id); return "Bearer " + s }
+	tok := func(id int64) string { s, _, _ := tokens.Issue(id, 0); return "Bearer " + s }
+	tokV := func(id int64, v int) string { s, _, _ := tokens.Issue(id, v); return "Bearer " + s }
 
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth.UserID(r.Context()) == 0 {
@@ -54,6 +57,8 @@ func TestAuthenticateAndRequireAdmin(t *testing.T) {
 		{"customer", userRoute, tok(1), 204},
 		{"deactivated", userRoute, tok(3), 401},
 		{"deleted user", userRoute, tok(99), 401},
+		{"revoked (old version)", userRoute, tokV(4, 1), 401},
+		{"current version", userRoute, tokV(4, 2), 204},
 		{"customer on admin route", adminRoute, tok(1), 403},
 		{"admin on admin route", adminRoute, tok(2), 204},
 	}

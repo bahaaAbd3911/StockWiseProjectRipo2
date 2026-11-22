@@ -13,7 +13,7 @@ import (
 )
 
 // A database created before the migration tool existed (000001 run by hand,
-// like the real one) must get only the NEW migrations; the baseline is adopted.
+// like the real one) must get only the NEWER migrations; the baseline is adopted.
 func TestMigrateAdoptsExistingDatabase(t *testing.T) {
 	requireServer(t)
 	ctx := context.Background()
@@ -44,8 +44,13 @@ func TestMigrateAdoptsExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(applied) != 1 || applied[0] != "000002_offers_bundles_debts" {
-		t.Fatalf("only 000002 should run on an existing database, got %v", applied)
+	for _, v := range applied {
+		if v == "000001_baseline" {
+			t.Fatalf("the baseline must be adopted, not run again: %v", applied)
+		}
+	}
+	if len(applied) == 0 || applied[0] != "000002_offers_bundles_debts" {
+		t.Fatalf("migrations after the baseline should run in order, got %v", applied)
 	}
 	again, err := migrate.Up(ctx, db, "../migrations")
 	if err != nil || len(again) != 0 {

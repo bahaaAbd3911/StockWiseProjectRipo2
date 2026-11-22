@@ -13,6 +13,7 @@ type User struct {
 	ProfileImageURL *string   `json:"profile_image_url"`
 	Role            string    `json:"role"`
 	IsActive        bool      `json:"-"`
+	TokenVersion    int       `json:"-"` // see auth.Claims.Version
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -47,4 +48,22 @@ type UpdateProfileRequest struct {
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
+}
+
+// TokenResponse is returned when an action gives the caller a fresh token
+// (e.g. after changing the password, which revokes the old ones).
+type TokenResponse struct {
+	Message   string    `json:"message"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ResetPasswordRequest: Token comes from the ?token= of the emailed link.
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
 }
