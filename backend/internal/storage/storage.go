@@ -24,7 +24,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"ecommerce-backend/internal/tenant"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -87,6 +90,9 @@ func New(cfg Config) (Storage, error) {
 // fileName matches the names Save creates; nothing else is ever served or deleted.
 var fileName = regexp.MustCompile(`^[0-9a-f]{32}\.(jpg|png|webp)$`)
 
+// storeFolder matches a store's folder name (its id).
+var storeFolder = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)
+
 func newName(ext string) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -95,13 +101,41 @@ func newName(ext string) (string, error) {
 	return hex.EncodeToString(b) + ext, nil
 }
 
-// nameIn returns the file name if fileURL was created under base.
-func nameIn(base, fileURL string) (string, bool) {
-	name, ok := strings.CutPrefix(fileURL, base)
-	if !ok || !fileName.MatchString(name) {
+// Each store's files live in their own folder: <store id>/<random name>.
+// Files uploaded before stores existed have no folder and belong to store 1.
+// keyFor builds the path of a new file for the context's store.
+func keyFor(ctx context.Context, name string) string {
+	if id := tenant.ID(ctx); id > 0 {
+		return strconv.FormatInt(id, 10) + "/" + name
+	}
+	return name
+}
+
+// ownedKey checks that fileURL is a file this storage created (under base)
+// AND that it belongs to the context's store, and returns its path. A store
+// can never delete another store's file, even by putting its URL into its
+// own product. Platform mode may delete any file.
+func ownedKey(ctx context.Context, base, fileURL string) (string, bool) {
+	rel, ok := strings.CutPrefix(fileURL, base)
+	if !ok {
 		return "", false
 	}
-	return name, true
+	owner := int64(1) // files from before multi-store
+	name := rel
+	if folder, rest, nested := strings.Cut(rel, "/"); nested {
+		if !storeFolder.MatchString(folder) {
+			return "", false
+		}
+		owner, _ = strconv.ParseInt(folder, 10, 64)
+		name = rest
+	}
+	if !fileName.MatchString(name) {
+		return "", false
+	}
+	if !tenant.IsPlatform(ctx) && owner != tenant.ID(ctx) {
+		return "", false
+	}
+	return rel, true
 }
 
 // ---------- local disk ----------
@@ -111,29 +145,34 @@ type Local struct {
 	base string // PUBLIC_URL/uploads/
 }
 
-func (l *Local) Save(_ context.Context, ext, _ string, data []byte) (string, error) {
+func (l *Local) Save(ctx context.Context, ext, _ string, data []byte) (string, error) {
 	name, err := newName(ext)
 	if err != nil {
 		return "", err
 	}
+	key := keyFor(ctx, name)
+	path := filepath.Join(l.dir, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
 	// Write to a temporary name first so a half-written file is never served.
-	tmp := filepath.Join(l.dir, name+".tmp")
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return "", err
 	}
-	if err := os.Rename(tmp, filepath.Join(l.dir, name)); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return "", err
 	}
-	return l.base + name, nil
+	return l.base + key, nil
 }
 
-func (l *Local) Delete(_ context.Context, fileURL string) error {
-	name, ok := nameIn(l.base, fileURL)
+func (l *Local) Delete(ctx context.Context, fileURL string) error {
+	key, ok := ownedKey(ctx, l.base, fileURL)
 	if !ok {
 		return nil
 	}
-	if err := os.Remove(filepath.Join(l.dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(filepath.Join(l.dir, filepath.FromSlash(key))); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -141,17 +180,18 @@ func (l *Local) Delete(_ context.Context, fileURL string) error {
 
 var contentTypes = map[string]string{".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 
-// Handler serves GET /uploads/{name}. Only names created by Save are served,
-// never directory listings. Names are random and files never change, so
-// browsers and CDNs may cache them for a year.
+// Handler serves GET /uploads/{store}/{name} and the older GET /uploads/{name}.
+// Only names created by Save are served, never directory listings. Names are
+// random and files never change, so browsers and CDNs may cache them for a year.
+// Images are public (they are shown in the shop), so any host may load them.
 func (l *Local) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("name")
-		if !fileName.MatchString(name) {
+		folder, name := r.PathValue("store"), r.PathValue("name")
+		if !fileName.MatchString(name) || (folder != "" && !storeFolder.MatchString(folder)) {
 			http.NotFound(w, r)
 			return
 		}
-		f, err := os.Open(filepath.Join(l.dir, name))
+		f, err := os.Open(filepath.Join(l.dir, folder, name))
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -164,7 +204,6 @@ func (l *Local) Handler() http.Handler {
 		}
 		w.Header().Set("Content-Type", contentTypes[filepath.Ext(name)])
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		// Images may be shown by the frontend on another origin.
 		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 		http.ServeContent(w, r, name, info.ModTime(), f)
 	})
@@ -185,20 +224,21 @@ func (s *S3) Save(ctx context.Context, ext, contentType string, data []byte) (st
 	if err != nil {
 		return "", err
 	}
-	_, err = s.client.PutObject(ctx, s.bucket, s3Prefix+name, bytes.NewReader(data), int64(len(data)),
+	key := s3Prefix + keyFor(ctx, name)
+	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{ContentType: contentType, CacheControl: "public, max-age=31536000, immutable"})
 	if err != nil {
 		return "", fmt.Errorf("upload to S3: %w", err)
 	}
-	return s.base + s3Prefix + name, nil
+	return s.base + key, nil
 }
 
 func (s *S3) Delete(ctx context.Context, fileURL string) error {
-	rest, ok := strings.CutPrefix(fileURL, s.base+s3Prefix)
-	if !ok || !fileName.MatchString(rest) {
+	key, ok := ownedKey(ctx, s.base+s3Prefix, fileURL)
+	if !ok {
 		return nil
 	}
-	return s.client.RemoveObject(ctx, s.bucket, s3Prefix+rest, minio.RemoveObjectOptions{})
+	return s.client.RemoveObject(ctx, s.bucket, s3Prefix+key, minio.RemoveObjectOptions{})
 }
 
 // ValidPublicURL is used by the config checks.

@@ -17,6 +17,9 @@ type Store struct {
 	Status   string `json:"status"` // active | suspended
 	Currency string `json:"currency"`
 	Timezone string `json:"timezone"`
+	// PrimaryDomain is the store's verified main custom domain, if any (its
+	// address in emails), e.g. shop.example.com.
+	PrimaryDomain string `json:"primary_domain"`
 }
 
 const (

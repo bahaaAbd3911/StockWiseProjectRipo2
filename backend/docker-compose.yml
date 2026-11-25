@@ -1,11 +1,12 @@
-# Everything on one server: PostgreSQL, migrations, the API and Caddy (HTTPS
-# with automatic Let's Encrypt certificates).
+# The whole platform on one server: PostgreSQL, migrations, the API, and the
+# web server (Caddy + the built React app, HTTPS with automatic certificates).
+# Every store - subdomains and custom domains - is served by these same containers.
 #
 #   cp .env.production.example .env.production   # fill it in
 #   docker compose --env-file .env.production up -d --build
 #
-# Order on every start: db healthy -> migrate up (exits) -> api -> caddy.
-# Only Caddy is reachable from outside (ports 80/443); the API and the
+# Order on every start: db healthy -> migrate up (exits) -> api -> web.
+# Only the web server is reachable from outside (ports 80/443); the API and the
 # database stay on the internal Docker network.
 #
 # Using a managed database instead (Neon, Supabase, RDS...)? Remove the `db`
@@ -57,17 +58,21 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  caddy:
-    image: caddy:2-alpine
+  # The front door: the React app for every store, /api and /uploads to the
+  # API, HTTPS certificates on demand for every host the API confirms.
+  web:
+    build:
+      context: ..                         # the repository root (Front-End + backend)
+      dockerfile: backend/deploy/Dockerfile.web
+    image: stockwise-web
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp" # HTTP/3
     environment:
-      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env.production}
+      ACME_EMAIL: ${ACME_EMAIL:-}       # Let's Encrypt expiry notices (optional)
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data # certificates: keep this volume
       - caddy-config:/config
     depends_on:

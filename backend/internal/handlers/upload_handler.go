@@ -20,11 +20,12 @@ import (
 type UploadHandler struct {
 	products *services.ProductService
 	users    *services.UserService
+	settings *services.SettingsService
 	maxBytes int64
 }
 
-func NewUploadHandler(products *services.ProductService, users *services.UserService, maxBytes int64) *UploadHandler {
-	return &UploadHandler{products: products, users: users, maxBytes: maxBytes}
+func NewUploadHandler(products *services.ProductService, users *services.UserService, settings *services.SettingsService, maxBytes int64) *UploadHandler {
+	return &UploadHandler{products: products, users: users, settings: settings, maxBytes: maxBytes}
 }
 
 // form is the parsed upload: the file in field "image" plus small text fields.
@@ -132,4 +133,18 @@ func (h *UploadHandler) DeleteProfileImage(w http.ResponseWriter, r *http.Reques
 		return err
 	}
 	return httpx.JSON(w, http.StatusOK, u)
+}
+
+// SettingsImage: POST /api/admin/settings/images (admin). Form field: image.
+// Returns {url}; the admin then saves the settings with that URL in a banner.
+func (h *UploadHandler) SettingsImage(w http.ResponseWriter, r *http.Request) error {
+	f, err := h.readForm(w, r)
+	if err != nil {
+		return err
+	}
+	url, err := h.settings.UploadImage(r.Context(), f.image)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, map[string]string{"url": url})
 }

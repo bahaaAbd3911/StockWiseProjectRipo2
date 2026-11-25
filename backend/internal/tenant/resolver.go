@@ -102,7 +102,8 @@ func (r *Resolver) Forget() {
 	r.mu.Unlock()
 }
 
-const storeColumns = `s.id, s.slug, s.name, s.status, s.currency, s.timezone`
+const storeColumns = `s.id, s.slug, s.name, s.status, s.currency, s.timezone,
+	COALESCE((SELECT p.domain FROM store_domains p WHERE p.store_id = s.id AND p.is_primary AND p.verified_at IS NOT NULL), '')`
 
 func (r *Resolver) lookup(ctx context.Context, host string) (Store, error) {
 	if slug, ok := r.SlugFor(host); ok {
@@ -128,9 +129,36 @@ func (r *Resolver) bySlug(ctx context.Context, slug string) (Store, error) {
 
 func scan(row *sql.Row) (Store, error) {
 	var s Store
-	err := row.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Currency, &s.Timezone)
+	err := row.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Currency, &s.Timezone, &s.PrimaryDomain)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Store{}, ErrNotFound
 	}
 	return s, err
+}
+
+// IsServed reports whether the platform serves this host name: a store's
+// subdomain, a verified custom domain of an active store, or the platform
+// admin host. Caddy asks this before getting an HTTPS certificate on demand,
+// so certificates are only ever requested for real stores.
+func (r *Resolver) IsServed(ctx context.Context, rawHost, platformHost string) (bool, error) {
+	host := NormalizeHost(rawHost)
+	if host == "" {
+		return false, nil
+	}
+	if host == NormalizeHost(platformHost) || (r.platformDomain != "" && host == r.platformDomain && r.defaultSlug != "") {
+		return true, nil // the platform admin, and the bare domain when it shows the default store
+	}
+	var s Store
+	var err error
+	if slug, ok := r.SlugFor(host); ok {
+		s, err = r.bySlug(ctx, slug)
+	} else {
+		s, err = scan(r.db.QueryRowContext(ctx, `
+			SELECT `+storeColumns+` FROM store_domains d JOIN stores s ON s.id = d.store_id
+			WHERE d.domain = $1 AND d.verified_at IS NOT NULL`, host))
+	}
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil && s.Status == StatusActive, err
 }

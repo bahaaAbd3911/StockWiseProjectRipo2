@@ -1,5 +1,7 @@
 # StockWise backend - the complete guide
 
+> For the whole project - frontend, backend, multi-store design and the reasons behind every decision - start with [../../DOCUMENTATION.md](../../DOCUMENTATION.md). This file is the detailed backend reference.
+
 This guide explains the whole backend: what it does, how it is built, and the
 logic behind every part, from the first rewrite to today. Three companion
 documents go deeper into single topics:
@@ -335,10 +337,23 @@ Background jobs that serve every store (the email worker, reminders,
 clean-up) run in **platform mode** (`tenant.AsPlatform`), which only server
 code can turn on.
 
-Per store now: catalog, categories, coupons, offers, bundles, customers (the
-same email can have an account in two stores), carts, orders, debts, reviews,
-waiting list, store settings, email queue, dashboard. Still global (planned):
-email sender name and links, currency and time zone in emails, upload folders.
+Per store: catalog, categories, coupons, offers, bundles, customers (the same
+email can have an account in two stores), carts, orders, debts, reviews,
+waiting list, store settings and page content, email queue, emails (sender
+name, links, currency), dashboard, uploaded files (`uploads/<store id>/`; a
+store can only delete its own files), custom domains.
+
+**Custom domains** (`/api/admin/domains`): the store admin adds a domain, publishes
+`TXT _stockwise-verify.<domain> "stockwise-verify=<token>"` and a CNAME to the store's
+platform address, then verifies; only verified domains serve the store. Caddy asks
+`GET /internal/tls-check?domain=` before getting a certificate (200 only for store
+subdomains, verified domains of active stores, the platform admin host and the bare
+domain). One verified domain can be the main address (used in emails).
+
+**Page content** (step 3): store settings also hold `content` - the home and products
+banners (texts in English and Arabic, an uploaded image), up to 8 feature tiles (Font
+Awesome icons only), and the footer (tagline, copyright, social links). Images are
+uploaded with `POST /api/admin/settings/images`; replaced ones are deleted.
 
 Existing data became store 1, `main`. Migration 000007 has a `down` file
 that only works while `main` is the only store.
@@ -683,6 +698,7 @@ notify.Worker every EMAIL_POLL_INTERVAL (5 s):
 | `000002_offers_bundles_debts` | offers, offer_products, bundles, bundle_items, cart_bundles, order_bundles, order_bundle_items, users.credit_limit, customer_debt_transactions, `pay_later` payment method, `deferred` payment status |
 | `000003_auth_security` | users.token_version, password_reset_tokens |
 | `000004_email_verification_notifications` | users.email_verified_at (existing users set to verified), users.debt_reminded_at, email_verification_tokens, email_outbox |
+| `000009_custom_domains` | store_domains.verify_token; one main domain per store |
 | `000008_platform` | platform_admins; email_outbox.from_name (per-store sender name) |
 | `000007_multi_tenant` | stores, store_domains; store_id (default = current store) on every store table; store-aware foreign keys; per-store unique email / category name / coupon code; one settings row per store; row-level security policies; role stockwise_app; existing data = store 1 `main` |
 | `000006_categories_settings` | categories (name, Arabic name, icon, on/off; seeded from the products' categories), store_settings (one JSON row: store name, logo, theme colors) |
@@ -858,6 +874,7 @@ data is never touched. Emails go to an in-memory mailer.
 | `TestProductWithImagesAndColors`, `TestCategories`, `TestStoreSettings`, `TestAdminUsers` | the endpoints and shapes the React frontend uses: media saved with the product, category rename and hide, settings validation (no script logos, bad colors), user management safety rules |
 | `TestStoreFromHostName`, `TestStoresAreIsolated`, `TestDatabaseEnforcesIsolation` | host name -> store, unknown 404 / suspended 403; one store cannot list, read, edit or delete another's products, orders or users, even with edited IDs; logins refused on other stores; same email / coupon code / category in two stores; per-store settings and dashboard; raw SQL on the API's connection: no store = no rows, no cross-store reads, writes or links, no store switch inside a transaction |
 | `TestPlatformAPIOnlyOnPlatformHost`, `TestPlatformCreatesReadyStore` | platform API only on its host, tokens never cross between platform and stores; store creation validation (reserved, invalid, taken slugs), store + settings + admin + invite in one step, invite link on the store's own address and only usable there, branded customer emails, counts, edit, suspend (403) and reactivate, re-invite replaces the link |
+| `TestStoreContentCustomization`, `TestUploadsArePerStore`, `TestCustomDomains` | content saved per store and validated (no script image URLs, icons, social links), banner image replaced and deleted, upload folders per store and no cross-store deletion, domains: validation, DNS instructions, verification with a stand-in DNS, serving only after verification, certificate check, main domain in emails, other stores locked out, suspended stores get no certificate |
 | `TestCoupons` | validation, minimum order, case-insensitive codes, stacking on offers, once per customer, cancel gives the use back, category scope, usage limit race between two carts, disabled codes block checkout, order keeps the code after delete |
 | `TestAdminDashboard` | local days, today's figures move with a new order, status counts, low stock, admin only, `days` limits |
 | `TestAdminEmailQueue` | summary, filters, detail, retry one / all failed, cancel, 409 on sent emails, retention clean-up, admin only |
@@ -962,7 +979,12 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 |---|---|---|
 | GET / POST | `/api/admin/categories` | GET includes switched-off categories; POST `{name, name_ar, icon, is_active?}` |
 | PUT / DELETE | `/api/admin/categories/{id}` | a rename is copied to the category's products; DELETE removes it and hides its products |
-| PUT | `/api/admin/settings` | `{storeName, logo, colors: {light: {...}, dark: {...}}}`; logo = data URL (up to 1 MB) or http(s) URL |
+| PUT | `/api/admin/settings` | `{storeName, logo, colors: {light: {...}, dark: {...}}, content: {hero, productsBanner, features, footer}}`; logo = data URL (up to 1 MB) or http(s) URL |
+| POST | `/api/admin/settings/images` | multipart `image` -> `{url}` (banner images, stored in the store's folder) |
+| GET / POST | `/api/admin/domains` | POST `{domain}` -> the domain with `dns: {txt_name, txt_value, cname_target}` |
+| POST | `/api/admin/domains/{id}/verify`, `/primary` | verify the TXT record; make it the main address |
+| DELETE | `/api/admin/domains/{id}` | |
+| GET | `/internal/tls-check?domain=` | for Caddy only (blocked from outside by the Caddyfile) |
 | GET / POST | `/api/admin/users` | GET `?search= &role=` with `is_active, orders_count, total_spent`; POST `{first_name, last_name, email, phone?, password, role?, is_active?}` (email counts as confirmed) |
 | GET | `/api/admin/users/{id}` | `{user, orders, favorites}` |
 | PUT | `/api/admin/users/{id}` | same body; empty password keeps it; a new password, role change or deactivation logs the user out |

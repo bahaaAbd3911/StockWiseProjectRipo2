@@ -7,6 +7,7 @@ package routes
 import (
 	"database/sql"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"ecommerce-backend/internal/auth"
@@ -26,11 +27,31 @@ import (
 // StoreURL is a store's public frontend address: the default store (and any
 // store when no platform is configured) uses FRONTEND_URL; others STORE_URL
 // with their slug, e.g. https://ahmad.myplatform.com.
+// A store with a verified main custom domain uses that domain.
 func StoreURL(cfg config.Config, s tenant.Store) string {
+	if s.PrimaryDomain != "" {
+		scheme := "https"
+		if strings.HasPrefix(cfg.FrontendURL, "http://") {
+			scheme = "http"
+		}
+		return scheme + "://" + s.PrimaryDomain
+	}
 	if cfg.StoreURL == "" || s.Slug == "" || s.Slug == cfg.DefaultStore {
 		return cfg.FrontendURL
 	}
 	return strings.ReplaceAll(cfg.StoreURL, "{slug}", s.Slug)
+}
+
+// StoreHost is a store's host name on the platform (what a custom domain's
+// CNAME record points to), e.g. ahmad.myplatform.com.
+func StoreHost(cfg config.Config, s tenant.Store) string {
+	if cfg.PlatformDomain != "" && s.Slug != "" {
+		return s.Slug + "." + cfg.PlatformDomain
+	}
+	if u, err := url.Parse(cfg.FrontendURL); err == nil {
+		return u.Hostname()
+	}
+	return ""
 }
 
 // App is the assembled application.
@@ -76,6 +97,9 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 		DebtReminderEvery: cfg.DebtReminderEvery,
 		Branding:          tpl,
 	})
+
+	// Finds the store of each request from its host name (middleware.Store).
+	resolver := tenant.NewResolver(db, cfg.PlatformDomain, cfg.DefaultStore)
 
 	// ---- repositories (SQL) ----
 	userRepo := repository.NewUserRepository(db)
@@ -127,10 +151,11 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	offers := handlers.NewOfferHandler(offerSvc)
 	bundles := handlers.NewBundleHandler(bundleSvc)
 	debts := handlers.NewDebtHandler(debtSvc)
-	uploads := handlers.NewUploadHandler(productSvc, userSvc, cfg.MaxUploadBytes)
+	settingsSvc := services.NewSettingsService(repository.NewSettingsRepository(db), files)
+	uploads := handlers.NewUploadHandler(productSvc, userSvc, settingsSvc, cfg.MaxUploadBytes)
 	emails := handlers.NewEmailHandler(services.NewEmailService(outbox))
 	categories := handlers.NewCategoryHandler(services.NewCategoryService(repository.NewCategoryRepository(db)))
-	settings := handlers.NewSettingsHandler(services.NewSettingsService(repository.NewSettingsRepository(db)))
+	settings := handlers.NewSettingsHandler(settingsSvc)
 	adminUsers := handlers.NewAdminUserHandler(services.NewAdminUserService(
 		repository.NewAdminUserRepository(db), orderRepo, favoriteRepo))
 	coupons := handlers.NewCouponHandler(services.NewCouponService(repository.NewCouponRepository(db), cartRepo))
@@ -172,7 +197,8 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 
 	// Uploaded files (local storage only; with S3 the bucket serves them)
 	if local, ok := files.(*storage.Local); ok {
-		mux.Handle("GET /uploads/{name}", local.Handler())
+		mux.Handle("GET /uploads/{store}/{name}", local.Handler()) // per-store folders
+		mux.Handle("GET /uploads/{name}", local.Handler())         // files from before multi-store
 	}
 
 	// Account
@@ -292,11 +318,22 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	admin("PUT /api/admin/categories/{id}", categories.Update)
 	admin("DELETE /api/admin/categories/{id}", categories.Delete)
 	admin("PUT /api/admin/settings", settings.Save)
+	admin("POST /api/admin/settings/images", uploads.SettingsImage) // banner images (multipart, field image)
 	admin("GET /api/admin/users", adminUsers.List)
 	admin("POST /api/admin/users", adminUsers.Create)
 	admin("GET /api/admin/users/{id}", adminUsers.Get)
 	admin("PUT /api/admin/users/{id}", adminUsers.Update)
 	admin("DELETE /api/admin/users/{id}", adminUsers.Delete)
+
+	// Custom domains (store admin), and the HTTPS check Caddy asks before issuing a certificate
+	domains := handlers.NewDomainHandler(services.NewDomainService(repository.NewDomainRepository(db), resolver, cfg.PlatformDomain,
+		func(s tenant.Store) string { return StoreHost(cfg, s) }), resolver, cfg.PlatformAdminHost)
+	admin("GET /api/admin/domains", domains.List)
+	admin("POST /api/admin/domains", domains.Add)
+	admin("POST /api/admin/domains/{id}/verify", domains.Verify)
+	admin("POST /api/admin/domains/{id}/primary", domains.SetPrimary)
+	admin("DELETE /api/admin/domains/{id}", domains.Delete)
+	public("GET /internal/tls-check", domains.TLSCheck)
 
 	// Coupons (admin)
 	admin("GET /api/admin/coupons", coupons.AdminList)
@@ -317,7 +354,6 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	admin("DELETE /api/admin/emails/{id}", emails.Cancel)
 
 	// ---- platform super admin (only on PLATFORM_ADMIN_HOST, see middleware.Store) ----
-	resolver := tenant.NewResolver(db, cfg.PlatformDomain, cfg.DefaultStore)
 	platformTokens := auth.NewPlatformTokenManager(cfg.JWTSecret, cfg.JWTTTL)
 	platformSvc := services.NewPlatformService(repository.NewPlatformRepository(db), platformTokens, mailer, tpl,
 		func(s tenant.Store) string { return StoreURL(cfg, s) }, resolver, loginFailures)

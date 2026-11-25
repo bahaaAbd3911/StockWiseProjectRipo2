@@ -1,0 +1,55 @@
+.addCard,
+.domainCard {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.addForm {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.addForm > div {
+  flex: 1 1 260px;
+}
+
+.domainHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.dns {
+  margin-top: 14px;
+  font-size: 0.95rem;
+}
+
+.dns table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.dns th,
+.dns td {
+  text-align: start;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--adm-border, #e2ebf0);
+  word-break: break-all;
+}
+
+.dns code {
+  font-size: 0.9rem;
+}
+
+.note {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}

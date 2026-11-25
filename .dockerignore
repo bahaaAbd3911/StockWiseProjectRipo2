@@ -1,0 +1,15 @@
+# Used when building backend/deploy/Dockerfile.web from the repository root.
+# Keep secrets, dependencies and local data out of the image build.
+.git
+.vscode
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.production.example
+Front-End/node_modules
+Front-End/dist
+backend/data
+backend/certs
+backend/uploads
+**/*.exe
+**/*.log

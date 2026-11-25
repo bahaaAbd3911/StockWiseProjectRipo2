@@ -68,5 +68,5 @@ func Store(resolver *tenant.Resolver, trustProxy bool, platformHost string) func
 }
 
 func storeless(path string) bool {
-	return path == "/" || path == "/api/health" || strings.HasPrefix(path, "/uploads/")
+	return path == "/" || path == "/api/health" || path == "/internal/tls-check" || strings.HasPrefix(path, "/uploads/")
 }

@@ -65,12 +65,13 @@ const platformStoreColumns = `s.id, s.slug, s.name, s.status, s.currency, s.time
 	(SELECT COUNT(*) FROM users u WHERE u.store_id = s.id AND u.role = 'customer' AND u.is_active),
 	(SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND o.status <> 'cancelled'),
 	(SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o WHERE o.store_id = s.id AND o.status <> 'cancelled'),
+	COALESCE((SELECT p.domain FROM store_domains p WHERE p.store_id = s.id AND p.is_primary AND p.verified_at IS NOT NULL), ''),
 	s.created_at, s.updated_at`
 
 func scanPlatformStore(sc scanner) (models.PlatformStore, error) {
 	var s models.PlatformStore
 	err := sc.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Currency, &s.Timezone, &s.AdminEmail,
-		&s.ProductsCount, &s.CustomersCount, &s.OrdersCount, &s.Revenue, &s.CreatedAt, &s.UpdatedAt)
+		&s.ProductsCount, &s.CustomersCount, &s.OrdersCount, &s.Revenue, &s.PrimaryDomain, &s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
 

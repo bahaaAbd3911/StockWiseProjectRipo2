@@ -5,6 +5,7 @@ import {
   faCartShopping,
   faUsers,
   faGear,
+  faGlobe,
 } from "@fortawesome/free-solid-svg-icons";
 
 export const translations = {
@@ -16,6 +17,7 @@ export const translations = {
     users: "Users",
     website: "WEBSITE",
     settings: "Store Settings",
+    domains: "Domains",
     logout: "Logout",
   },
   arb: {
@@ -26,6 +28,7 @@ export const translations = {
     users: "المستخدمون",
     website: "إعدادات الموقع",
     settings: "إعدادات المتجر",
+    domains: "النطاقات",
     logout: "تسجيل الخروج",
   },
 };
@@ -41,4 +44,5 @@ export const mainPages = [
 
 export const websitePages = [
   { key: "settings", path: "/admin/settings", icon: faGear },
+  { key: "domains", path: "/admin/domains", icon: faGlobe },
 ];

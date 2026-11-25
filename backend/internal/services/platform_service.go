@@ -92,7 +92,7 @@ func (s *PlatformService) AuthInfo(ctx context.Context, id int64) (active bool, 
 }
 
 func (s *PlatformService) withURL(st models.PlatformStore) models.PlatformStore {
-	st.URL = s.storeURL(tenant.Store{ID: st.ID, Slug: st.Slug})
+	st.URL = s.storeURL(tenant.Store{ID: st.ID, Slug: st.Slug, PrimaryDomain: st.PrimaryDomain})
 	return st
 }
 
@@ -170,7 +170,7 @@ func (s *PlatformService) ResendInvite(ctx context.Context, id int64) (string, e
 // The invite carries a secret link, so it is sent directly (not queued, like
 // password resets).
 func (s *PlatformService) sendInvite(ctx context.Context, st models.PlatformStore, to notify.Recipient, token string) error {
-	tpl := s.branding.ForStore(tenant.Store{ID: st.ID, Slug: st.Slug, Name: st.Name, Currency: st.Currency})
+	tpl := s.branding.ForStore(tenant.Store{ID: st.ID, Slug: st.Slug, Name: st.Name, Currency: st.Currency, PrimaryDomain: st.PrimaryDomain})
 	link, err := notify.AddQuery(tpl.ResetURL, "token", token)
 	if err != nil {
 		return err

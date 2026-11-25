@@ -20,6 +20,7 @@ import Orders from "./Pages/admin/Orders/Orders";
 import Users from "./Pages/admin/Users/Users";
 import UserProfile from "./Pages/admin/UserProfile/UserProfile";
 import StoreSettings from "./Pages/admin/StoreSettings/StoreSettings";
+import Domains from "./Pages/admin/Domains/Domains";
 import VerifyEmail from "./Pages/account/VerifyEmail";
 import ResetPassword from "./Pages/account/ResetPassword";
 
@@ -71,6 +72,7 @@ function App() {
           <Route path="users" element={<Users />} />
           <Route path="users/:userId" element={<UserProfile />} />
           <Route path="settings" element={<StoreSettings />} />
+          <Route path="domains" element={<Domains />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
 

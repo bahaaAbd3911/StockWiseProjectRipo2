@@ -249,3 +249,55 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ---------- Page content editor ---------- */
+.contentSection {
+    border: 1px solid var(--adm-border, #e2ebf0);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.contentSection legend {
+    padding: 0 6px;
+    font-weight: 600;
+}
+
+.imageRow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.imageRow img {
+    width: 120px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.fileButton {
+    cursor: pointer;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--adm-border, #e2ebf0);
+}
+
+.featureRow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    align-items: end;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--adm-border, #e2ebf0);
+}
+
+.rowButtons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}

@@ -1,4 +1,4 @@
-import { api, fetchAll } from "./client";
+import { api, fetchAll, upload } from "./client";
 import { fromCategory, fromProduct, toCategory, toProduct, toReview } from "./mappers";
 
 // The whole catalog (the shop filters it in the browser). Admins also get
@@ -31,3 +31,6 @@ export const postReview = async (productId, comment, rating) =>
 
 export const fetchSettings = () => api("/api/settings");
 export const saveSettings = (settings) => api("/api/admin/settings", { method: "PUT", body: settings });
+
+// Uploads a banner image for this store's settings and returns its URL.
+export const uploadSettingsImage = async (file) => (await upload("/api/admin/settings/images", file)).url;

@@ -7,6 +7,7 @@ import {
 // Import Hooks
 import { useContext } from "react";
 import { AuthContext } from "../../../context/AuthContext";
+import { useStoreContent } from "../../../hooks/useStoreContent";
 
 // Import Motion
 import { motion } from "motion/react";
@@ -17,39 +18,14 @@ import Feature from "./Feature";
 function Features() {
   const { lang } = useContext(AuthContext);
 
-  const features = [
-    {
-      icon: "fa-solid fa-truck",
-      name: "Free Shipping",
-      arbName: "توصيل مجاني",
-      comment: "On Orders Over $$0",
-      arbComment: "لكل الطلبات",
-    },
-
-    {
-      icon: "fa-regular fa-eye-slash",
-      name: "Secure Payment",
-      arbName: "دفع آمن",
-      comment: "Cash On",
-      arbComment: "عند الاستلام",
-    },
-
-    {
-      icon: "fa-solid fa-clock-rotate-left",
-      name: "Easy Return",
-      arbName: "سهولة إرجاع الطلبات",
-      comment: "Withen 7 Days",
-      arbComment: "خلال سبع أيام",
-    },
-
-    {
-      icon: "fa-solid fa-business-time",
-      name: "24/7 Support",
-      arbName: "متاحون على مدار الساعة",
-      comment: "We Are Here To Help",
-      arbComment: "جاهون للمساعدة",
-    },
-  ];
+  // The store's own tiles (Store Settings), or the defaults.
+  const features = useStoreContent().features.map((f) => ({
+    icon: f.icon,
+    name: f.name || f.nameAr,
+    arbName: f.nameAr || f.name,
+    comment: f.comment || f.commentAr,
+    arbComment: f.commentAr || f.comment,
+  }));
   return (
     <>
       <motion.div

@@ -45,7 +45,9 @@ function Advertisement({ data, value }) {
               }
             }}
           >
-            <span>{lang === "arb" ? "تسوق الآن" : "Shop Now"}</span>
+            <span>
+              {lang === "arb" ? data.arbButtonText || "تسوق الآن" : data.buttonText || "Shop Now"}
+            </span>
             <span>
               {lang === "arb" ? (
                 <i className="fa-solid fa-arrow-left"></i>

@@ -1,20 +1,19 @@
 # Going to production - checklist
 
-The steps to put the API on a server, in order. Background for every step is
-in [GUIDE.md](GUIDE.md) (sections 8-10).
+The steps to put the whole platform (every store, the platform admin, custom
+domains) on one server, in order. Background: [../../DOCUMENTATION.md](../../DOCUMENTATION.md)
+sections 6 and 13, and [GUIDE.md](GUIDE.md) sections 8-10.
 
 ## 1. Before you start
 
 - [ ] A server (VPS) with Docker installed, ports **80** and **443** open.
-  On Render / Railway / Fly.io, skip Caddy and follow "Option B" in GUIDE.md §9.
-- [ ] Two domain names, e.g. `shop.example.com` (frontend) and
-  `api.example.com` (API). Add a DNS **A** record (and **AAAA** for IPv6) for
-  `api.example.com` pointing at the server.
+- [ ] The platform's domain, e.g. `myplatform.com`. At its DNS provider add
+  **A** records (and **AAAA** for IPv6) pointing at the server for:
+  - `myplatform.com` (the default store / landing page)
+  - `*.myplatform.com` (every store, and `admin.myplatform.com`)
 - [ ] An SMTP provider (Brevo, Mailgun, Amazon SES, Postmark...). Verify your
   domain there and add the **SPF** and **DKIM** records it gives you, or
   emails will land in spam.
-- [ ] The frontend has the pages listed in GUIDE.md §13 (`/verify-email`,
-  `/reset-password`, `/orders/{id}`, `/account/debt`, `/products/{id}`).
 
 ## 2. Configure
 
@@ -27,12 +26,12 @@ Fill in every `<...>`:
 
 | Setting | How |
 |---|---|
+| `PLATFORM_DOMAIN` | `myplatform.com` |
+| `FRONTEND_URL`, `PUBLIC_URL`, `CORS_ALLOWED_ORIGINS` | `https://myplatform.com` |
 | `JWT_SECRET` | `openssl rand -base64 48` (PowerShell: `[Convert]::ToBase64String((1..48 \| % { [byte](Get-Random -Max 256) }))`) |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` (letters and digits only - it goes into a URL) |
-| `API_DOMAIN`, `PUBLIC_URL` | `api.example.com`, `https://api.example.com` |
-| `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` | `https://shop.example.com` (no trailing slash, no path) |
-| `SMTP_*` | from your provider; `SMTP_FROM` on your verified domain |
-| `CURRENCY`, `STORE_NAME` | as customers should see them |
+| `SMTP_*` | from your provider; `SMTP_FROM` on your verified domain (each store's emails show the store's name with this address) |
+| `ACME_EMAIL` | optional: Let's Encrypt certificate notices |
 
 Never commit `.env.production` (it is in `.gitignore`).
 
@@ -40,32 +39,51 @@ Never commit `.env.production` (it is in `.gitignore`).
 
 ```bash
 docker compose --env-file .env.production up -d --build
-docker compose ps                  # db healthy, migrate exited 0, api healthy, caddy running
+docker compose ps                  # db healthy, migrate exited 0, api healthy, web running
 docker compose logs api            # look for: msg=starting env=production
-curl https://api.example.com/api/health
+curl https://myplatform.com/api/health
 ```
 
 If the API refuses to start, `docker compose logs api` prints the full list
-of settings to fix. Warnings (e.g. about the database) are logged but do not
-stop it.
+of settings to fix. Warnings are logged but do not stop it (the warning about
+`DEFAULT_STORE` with `PLATFORM_DOMAIN` is expected when the bare domain
+shows the `main` store).
 
-## 4. First admin
+## 4. First platform admin, first store
 
 ```bash
-# register through the frontend first, then:
-docker compose exec db psql -U shop_api -d ecommerce \
-  -c "UPDATE users SET role = 'admin' WHERE email = 'you@example.com';"
+docker compose --env-file .env.production exec api /app/platform create-admin -email you@example.com -first You -last Name
 ```
+
+It prints a password once. Open `https://admin.myplatform.com`, sign in,
+create a store (address, name, its admin's name and email). The store's admin
+gets an invitation email and the store is live at `https://<address>.myplatform.com`.
+
+The existing `main` store keeps its data. To give it an admin, register on
+`https://myplatform.com` and run:
+`docker compose exec db psql -U shop_api -d ecommerce -c "UPDATE users SET role = 'admin' WHERE store_id = 1 AND email = 'you@example.com';"`
 
 ## 5. Check
 
-- [ ] `https://api.example.com/api/health` → `{"database":"ok","status":"ok"}`, padlock in the browser
-- [ ] `http://api.example.com/api/health` redirects to HTTPS
-- [ ] Register → the confirmation email arrives (check spam) → the link confirms
-- [ ] Forgot password → the email arrives → reset works
+- [ ] `https://myplatform.com/api/health` → `{"database":"ok","status":"ok"}`, padlock in the browser
+- [ ] `http://myplatform.com` redirects to HTTPS
+- [ ] `https://admin.myplatform.com` shows the platform login
+- [ ] A new store opens at its address; `https://nosuchstore.myplatform.com/api/products` → 404
+- [ ] Register on a store → the confirmation email (sent as the store) links to that store
 - [ ] Place an order → "Order received" email; change its status → status email
-- [ ] Upload a product image in the admin → it shows in the shop
+- [ ] Upload a product image → it shows in the shop
+- [ ] A custom domain: add it in the store's admin (Domains), create the TXT and CNAME records, verify, open it (the certificate is issued on the first visit)
 - [ ] `GET /api/admin/emails/summary` shows `failed: 0` and a small `pending`
+
+### Many stores: one wildcard certificate
+
+Certificates are issued on demand per host. Let's Encrypt allows **50 per
+week per registered domain**, so with many store subdomains switch them to one
+wildcard certificate for `*.myplatform.com`. That needs Caddy built with your
+DNS provider's module (e.g. `xcaddy build --with github.com/caddy-dns/cloudflare`)
+and an API token; add a site block `*.myplatform.com { tls { dns cloudflare {env.CF_API_TOKEN} } ... }`
+with the same handlers as the `https://` block. Custom domains keep using
+on-demand certificates.
 
 ## 6. Backups (do not skip)
 
@@ -106,7 +124,7 @@ when a release adds a migration.
 
 ## 8. Monitoring (recommended)
 
-- An uptime check on `https://api.example.com/api/health` every minute
+- An uptime check on `https://myplatform.com/api/health` every minute
   (UptimeRobot, Better Stack, ...).
 - Logs are JSON on stdout: `docker compose logs -f api`, or ship them to a log
   service. Search for `level=ERROR`.

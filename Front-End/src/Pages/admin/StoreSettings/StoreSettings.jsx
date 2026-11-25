@@ -6,6 +6,7 @@ import { useSettingsDraft } from "./useSettingsDraft";
 import LogoCard from "./components/LogoCard";
 import StoreNameCard from "./components/StoreNameCard";
 import ColorsCard from "./components/ColorsCard";
+import ContentCard from "./components/ContentCard";
 import LivePreview from "./components/LivePreview";
 import SettingsFooter from "./components/SettingsFooter";
 import styles from "./StoreSettings.module.css";
@@ -32,6 +33,7 @@ export default function StoreSettings() {
             <StoreNameCard value={draft.storeName} onChange={(v) => settings.setField("storeName", v)} tr={tr} />
           </div>
           <ColorsCard colors={draft.colors} mode={mode} onModeChange={setMode} onColor={settings.setColor} tr={tr} />
+          <ContentCard content={draft.content} onChange={(v) => settings.setField("content", v)} tr={tr} />
         </div>
 
         <LivePreview settings={draft} mode={mode} tr={tr} />

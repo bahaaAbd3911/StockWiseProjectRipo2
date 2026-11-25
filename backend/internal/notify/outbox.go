@@ -228,7 +228,8 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 	err := database.WithTx(ctx, w.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
 			SELECT u.id, u.store_id, u.email, u.first_name, b.balance,
-			       s.slug, s.name, s.currency, s.timezone
+			       s.slug, s.name, s.currency, s.timezone,
+			       COALESCE((SELECT p.domain FROM store_domains p WHERE p.store_id = s.id AND p.is_primary AND p.verified_at IS NOT NULL), '')
 			FROM users u
 			JOIN stores s ON s.id = u.store_id AND s.status = 'active'
 			CROSS JOIN LATERAL (
@@ -255,7 +256,7 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 		for rows.Next() {
 			var d due
 			if err := rows.Scan(&d.id, &d.store, &d.to.Email, &d.to.FirstName, &d.balance,
-				&d.shop.Slug, &d.shop.Name, &d.shop.Currency, &d.shop.Timezone); err != nil {
+				&d.shop.Slug, &d.shop.Name, &d.shop.Currency, &d.shop.Timezone, &d.shop.PrimaryDomain); err != nil {
 				rows.Close()
 				return err
 			}

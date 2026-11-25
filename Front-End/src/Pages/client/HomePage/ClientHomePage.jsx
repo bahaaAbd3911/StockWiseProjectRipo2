@@ -8,19 +8,11 @@ import Footer from "../../../components/common/Footer/Footer";
 import SearchBar from "../../../components/common/SearchBar/SearchBar";
 import UserSettings from "../../../components/common/UserSettings/UserSettings";
 
-// Import Image
-import img1 from "../../../assets/images/istockphoto-1170073824-612x612.jpg";
+import { toAdData, useStoreContent } from "../../../hooks/useStoreContent";
 
 function ClientHomePage() {
-  const data = {
-    arbAdTitle: "كل ما تريده ي مكان واحد",
-    adTitle: "Everything You Want On One Place",
-    arbAdSubTitle: "اكتشف منتجات مذهلة، وأسعار رائعة،",
-    adSubTitle: "Discover Amazing Products, great price and",
-    arbCom: "وتجربة تسوق سلسة.",
-    com: "a seamless shopping experience",
-    imgSrc: img1,
-  };
+  // The store's own banner (Store Settings), or the defaults.
+  const data = toAdData(useStoreContent().hero);
 
   return (
     <>

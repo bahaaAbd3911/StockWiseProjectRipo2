@@ -31,8 +31,9 @@ type PlatformStore struct {
 	Status         string          `json:"status"` // active | suspended
 	Currency       string          `json:"currency"`
 	Timezone       string          `json:"timezone"`
-	URL            string          `json:"url"`         // the store's public address
-	AdminEmail     *string         `json:"admin_email"` // its first admin
+	URL            string          `json:"url"`            // the store's public address
+	PrimaryDomain  string          `json:"primary_domain"` // verified main custom domain, if any
+	AdminEmail     *string         `json:"admin_email"`    // its first admin
 	ProductsCount  int             `json:"products_count"`
 	CustomersCount int             `json:"customers_count"`
 	OrdersCount    int             `json:"orders_count"` // not cancelled
