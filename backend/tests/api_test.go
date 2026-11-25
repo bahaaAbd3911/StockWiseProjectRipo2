@@ -35,8 +35,9 @@ import (
 
 var (
 	server  *httptest.Server
-	testDB  *sql.DB
-	baseURL string // INTEGRATION_DATABASE_URL
+	testDB  *sql.DB // owner connection, sees every store (for checks in tests)
+	appDB   *sql.DB // what the API uses: role stockwise_app, row-level security
+	baseURL string  // INTEGRATION_DATABASE_URL
 
 	uploadDir     string         // temporary folder for uploaded images
 	notifications *notify.Worker // the main server's email worker
@@ -76,6 +77,15 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 		return 0, err
 	}
 	u.Path = "/" + name
+	appURL := u.String()
+	// testDB is the tests' own connection: the database owner, so it sees every
+	// store (owners bypass row-level security), and its inserts default to
+	// store 1 ("main") unless they name another store.
+	// (%20, not "+": the driver reads "+" literally)
+	if u.RawQuery != "" {
+		u.RawQuery += "&"
+	}
+	u.RawQuery += "options=-c%20app.store_id%3D1"
 	testDB, err = database.Connect(ctx, u.String())
 	if err != nil {
 		return 0, err
@@ -87,6 +97,14 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 		return 0, fmt.Errorf("apply migrations: %w", err)
 	}
 
+	// The API uses the same restricted connection as in production: role
+	// stockwise_app under row-level security.
+	appDB, err = database.ConnectApp(ctx, appURL)
+	if err != nil {
+		return 0, err
+	}
+	defer appDB.Close()
+
 	// Rate limits are off here (RateLimits zero value); auth_test.go starts a
 	// second server with limits on.
 	dir, err := os.MkdirTemp("", "stockwise-uploads-")
@@ -96,7 +114,7 @@ func runWithTempDB(m *testing.M, base string) (int, error) {
 	defer os.RemoveAll(dir)
 	uploadDir = dir
 
-	app, err := routes.New(testDB, testConfig(), outbox)
+	app, err := routes.New(appDB, testConfig(), outbox)
 	if err != nil {
 		return 0, err
 	}
@@ -113,6 +131,13 @@ type J = map[string]any
 
 func call(t *testing.T, method, path, token string, body any) (int, any) {
 	t.Helper()
+	return callOn(t, "", method, path, token, body)
+}
+
+// callOn sends the request to another store: host is its host name, e.g.
+// "other.shop.test" ("" = the test server's own address, the main store).
+func callOn(t *testing.T, host, method, path, token string, body any) (int, any) {
+	t.Helper()
 	var reader *bytes.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -122,6 +147,9 @@ func call(t *testing.T, method, path, token string, body any) (int, any) {
 	}
 	req, _ := http.NewRequest(method, server.URL+path, reader)
 	req.Header.Set("Content-Type", "application/json")
+	if host != "" {
+		req.Host = host
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

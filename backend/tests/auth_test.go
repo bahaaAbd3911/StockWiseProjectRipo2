@@ -70,10 +70,15 @@ var outbox = &captureMailer{}
 // testPublicURL is the API address used in uploaded-image URLs during tests.
 const testPublicURL = "http://api.test"
 
+// testPlatformDomain: other stores are reached with Host: <slug>.shop.test.
+const testPlatformDomain = "shop.test"
+
 func testConfig() config.Config {
 	return config.Config{
 		JWTSecret:                "integration-test-secret-0123456789abcdef",
 		JWTTTL:                   time.Hour,
+		PlatformDomain:           testPlatformDomain, // stores at <slug>.shop.test
+		DefaultStore:             "main",             // 127.0.0.1 (the test server) is the main store
 		AllowedOrigins:           []string{"http://localhost:5173"},
 		StoreName:                "TestShop",
 		FrontendURL:              "http://localhost:5173",
@@ -253,7 +258,7 @@ func TestRateLimits(t *testing.T) {
 		ResetRequests: ratelimit.Rule{Requests: 1, Per: time.Hour},
 	}
 	box := &captureMailer{}
-	app, err := routes.New(testDB, cfg, box)
+	app, err := routes.New(appDB, cfg, box)
 	if err != nil {
 		t.Fatal(err)
 	}

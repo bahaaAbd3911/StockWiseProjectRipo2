@@ -12,6 +12,7 @@ import (
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/auth"
 	"ecommerce-backend/internal/httpx"
+	"ecommerce-backend/internal/tenant"
 )
 
 // AccountLookup returns a user's current auth.AccountInfo (sql.ErrNoRows if the
@@ -24,7 +25,8 @@ type AccountLookup interface {
 //
 // Steps:
 //  1. read and split the header
-//  2. verify the token (signature, algorithm, issuer, expiry)
+//  2. verify the token (signature, algorithm, issuer, expiry) and that it was
+//     issued by the store of this request's host
 //  3. look the user up in the database: they must still exist and be active
 //     (so deactivating an account locks it out immediately, even with a valid
 //     token) and we read their CURRENT role
@@ -47,11 +49,19 @@ func Authenticate(tokens *auth.TokenManager, accounts AccountLookup) func(http.H
 				return
 			}
 
-			userID, version, err := tokens.Parse(token)
+			claims, err := tokens.Parse(token)
 			if err != nil {
 				httpx.WriteError(w, r, apperr.Unauthorized("invalid or expired token"))
 				return
 			}
+			// A token only works on the store that issued it. (The lookup below
+			// would fail anyway - row-level security hides other stores'
+			// users - but a clear check here costs nothing.)
+			if claims.StoreID != tenant.ID(r.Context()) {
+				httpx.WriteError(w, r, apperr.Unauthorized("this login belongs to another store; please log in here"))
+				return
+			}
+			userID, version := claims.UserID, claims.Version
 
 			info, err := accounts.AuthInfo(r.Context(), userID)
 			if errors.Is(err, sql.ErrNoRows) || (err == nil && !info.Active) {

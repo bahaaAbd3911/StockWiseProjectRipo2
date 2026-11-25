@@ -53,6 +53,14 @@ type Config struct {
 	FrontendURL string // FRONTEND_URL, default http://localhost:5173
 	Currency    string // CURRENCY, printed after amounts in emails, e.g. JOD (default none)
 
+	// Stores (multi-tenant). PlatformDomain: stores live at <slug>.PLATFORM_DOMAIN
+	// ("" = no subdomain stores). DefaultStore: the store for every other host
+	// (localhost, an IP, the bare domain); "" = such hosts get 404. A single-shop
+	// setup keeps the default "main"; a platform sets PLATFORM_DOMAIN and
+	// DEFAULT_STORE= (empty) so unknown hosts are refused.
+	PlatformDomain string // PLATFORM_DOMAIN, default ""
+	DefaultStore   string // DEFAULT_STORE, default main
+
 	// Admin dashboard.
 	StoreTimezone     *time.Location // STORE_TIMEZONE, default Asia/Amman: when a "day" starts
 	LowStockThreshold int            // LOW_STOCK_THRESHOLD, default 5: products at or below are "low stock"
@@ -236,6 +244,15 @@ func Load() (Config, error) {
 		Username: getenv("SMTP_USERNAME", ""),
 		Password: os.Getenv("SMTP_PASSWORD"),
 		From:     getenv("SMTP_FROM", ""),
+	}
+
+	cfg.PlatformDomain = strings.ToLower(strings.Trim(getenv("PLATFORM_DOMAIN", ""), "."))
+	if cfg.PlatformDomain != "" && (strings.ContainsAny(cfg.PlatformDomain, "/: ") || !strings.Contains(cfg.PlatformDomain, ".") && cfg.PlatformDomain != "localhost") {
+		bad("PLATFORM_DOMAIN must be a domain name such as myplatform.com (no scheme, port or path)")
+	}
+	cfg.DefaultStore = strings.ToLower(os.Getenv("DEFAULT_STORE"))
+	if _, set := os.LookupEnv("DEFAULT_STORE"); !set {
+		cfg.DefaultStore = "main"
 	}
 
 	cfg.StoreName = getenv("STORE_NAME", "StockWise")
@@ -438,6 +455,11 @@ func checkProduction(cfg Config) (problems, warnings []string) {
 		if u.User != nil && u.User.Username() == "postgres" {
 			warn("DATABASE_URL uses the postgres superuser; create a dedicated user for the API (see docs/production.md)")
 		}
+	}
+
+	// Stores: on a platform, a host that is no store should get 404, not a shop.
+	if cfg.PlatformDomain != "" && cfg.DefaultStore != "" {
+		warn("PLATFORM_DOMAIN is set and DEFAULT_STORE=%s: every unknown host name shows that store; set DEFAULT_STORE= (empty) to refuse them", cfg.DefaultStore)
 	}
 	return problems, warnings
 }

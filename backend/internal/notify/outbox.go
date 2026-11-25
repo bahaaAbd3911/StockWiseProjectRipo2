@@ -10,6 +10,7 @@ import (
 
 	"ecommerce-backend/internal/database"
 	"ecommerce-backend/internal/mail"
+	"ecommerce-backend/internal/tenant"
 
 	"github.com/shopspring/decimal"
 )
@@ -39,6 +40,16 @@ func (o *Outbox) EnqueueOrLog(ctx context.Context, kind string, m mail.Message) 
 	}
 }
 
+// enqueueFor queues an email for a given store (used in platform mode, where
+// store_id has no default).
+func enqueueFor(ctx context.Context, q database.Querier, storeID int64, kind string, m mail.Message) error {
+	_, err := q.ExecContext(ctx,
+		`INSERT INTO email_outbox (store_id, kind, to_address, subject, body) VALUES ($1, $2, $3, $4, $5)`,
+		storeID, kind, m.To, m.Subject, m.Text)
+	return err
+}
+
+// enqueue queues an email for the current store (store_id defaults to it).
 func enqueue(ctx context.Context, q database.Querier, kind string, m mail.Message) error {
 	_, err := q.ExecContext(ctx,
 		`INSERT INTO email_outbox (kind, to_address, subject, body) VALUES ($1, $2, $3, $4)`,
@@ -97,7 +108,7 @@ func (w *Worker) Start() {
 		defer ticker.Stop()
 		var lastReminders, lastCleanup time.Time
 		for {
-			ctx := context.Background()
+			ctx := tenant.AsPlatform(context.Background()) // the worker serves every store
 			if time.Since(lastCleanup) >= time.Hour {
 				lastCleanup = time.Now()
 				if n, err := (&Outbox{db: w.db}).DeleteOldSent(ctx, w.opts.KeepSentDays); err != nil {
@@ -137,6 +148,7 @@ func (w *Worker) Stop() {
 // sent. The rows stay locked (FOR UPDATE SKIP LOCKED) while they are sent, so
 // a second API instance picks different rows and nothing goes out twice.
 func (w *Worker) RunOnce(ctx context.Context) (int, error) {
+	ctx = tenant.AsPlatform(ctx)
 	sent := 0
 	err := database.WithTx(ctx, w.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
@@ -207,13 +219,14 @@ func Backoff(attempts int) time.Duration {
 // reminder and users.debt_reminded_at are written in the same transaction, so
 // a customer is never reminded twice for the same period.
 func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
+	ctx = tenant.AsPlatform(ctx)
 	if w.opts.DebtReminderEvery <= 0 {
 		return 0, nil
 	}
 	queued := 0
 	err := database.WithTx(ctx, w.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
-			SELECT u.id, u.email, u.first_name, b.balance
+			SELECT u.id, u.store_id, u.email, u.first_name, b.balance
 			FROM users u
 			CROSS JOIN LATERAL (
 				SELECT COALESCE(SUM(t.amount), 0) AS balance,
@@ -230,13 +243,14 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 		}
 		type due struct {
 			id      int64
+			store   int64
 			to      Recipient
 			balance decimal.Decimal
 		}
 		var list []due
 		for rows.Next() {
 			var d due
-			if err := rows.Scan(&d.id, &d.to.Email, &d.to.FirstName, &d.balance); err != nil {
+			if err := rows.Scan(&d.id, &d.store, &d.to.Email, &d.to.FirstName, &d.balance); err != nil {
 				rows.Close()
 				return err
 			}
@@ -247,7 +261,8 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 			return err
 		}
 		for _, d := range list {
-			if err := enqueue(ctx, tx, KindDebtReminder, w.opts.Templates.DebtReminder(d.to, d.balance)); err != nil {
+			// Platform mode has no current store, so the reminder names its store.
+			if err := enqueueFor(ctx, tx, d.store, KindDebtReminder, w.opts.Templates.DebtReminder(d.to, d.balance)); err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE users SET debt_reminded_at = NOW() WHERE id = $1`, d.id); err != nil {

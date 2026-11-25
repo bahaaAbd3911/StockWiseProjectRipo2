@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/tenant"
 )
 
 type fakeAccounts map[int64]struct {
@@ -33,8 +34,10 @@ func TestAuthenticateAndRequireAdmin(t *testing.T) {
 		3: {auth.RoleCustomer, false, 0},
 		4: {auth.RoleCustomer, true, 2}, // logged out everywhere twice
 	}
-	tok := func(id int64) string { s, _, _ := tokens.Issue(id, 0); return "Bearer " + s }
-	tokV := func(id int64, v int) string { s, _, _ := tokens.Issue(id, v); return "Bearer " + s }
+	// The requests below run for store 1; tokens of store 2 must be refused.
+	tok := func(id int64) string { s, _, _ := tokens.Issue(1, id, 0); return "Bearer " + s }
+	tokV := func(id int64, v int) string { s, _, _ := tokens.Issue(1, id, v); return "Bearer " + s }
+	otherStore, _, _ := tokens.Issue(2, 1, 0)
 
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth.UserID(r.Context()) == 0 {
@@ -61,9 +64,11 @@ func TestAuthenticateAndRequireAdmin(t *testing.T) {
 		{"current version", userRoute, tokV(4, 2), 204},
 		{"customer on admin route", adminRoute, tok(1), 403},
 		{"admin on admin route", adminRoute, tok(2), 204},
+		{"token of another store", userRoute, "Bearer " + otherStore, 401},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req = req.WithContext(tenant.WithStore(req.Context(), tenant.Store{ID: 1, Slug: "main"}))
 		if c.header != "" {
 			req.Header.Set("Authorization", c.header)
 		}

@@ -24,6 +24,7 @@ import (
 	"ecommerce-backend/internal/ratelimit"
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/storage"
+	"ecommerce-backend/internal/tenant"
 	"ecommerce-backend/internal/validators"
 
 	"golang.org/x/crypto/bcrypt"
@@ -112,7 +113,7 @@ func (s *UserService) Login(ctx context.Context, req models.LoginRequest) (model
 	if err := validators.ValidateLogin(&req); err != nil {
 		return models.LoginResponse{}, err
 	}
-	if ok, wait := s.opts.LoginFailures.Check(req.Email); !ok {
+	if ok, wait := s.opts.LoginFailures.Check(perStore(ctx, req.Email)); !ok {
 		return models.LoginResponse{}, apperr.TooManyRequests(
 			"too many failed login attempts for this account; please try again later or reset your password", wait)
 	}
@@ -120,22 +121,22 @@ func (s *UserService) Login(ctx context.Context, req models.LoginRequest) (model
 	user, hash, err := s.users.GetByEmail(ctx, req.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(req.Password))
-		s.opts.LoginFailures.Fail(req.Email)
+		s.opts.LoginFailures.Fail(perStore(ctx, req.Email))
 		return models.LoginResponse{}, errBadCredentials
 	}
 	if err != nil {
 		return models.LoginResponse{}, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
-		s.opts.LoginFailures.Fail(req.Email)
+		s.opts.LoginFailures.Fail(perStore(ctx, req.Email))
 		return models.LoginResponse{}, errBadCredentials
 	}
 	if !user.IsActive {
 		return models.LoginResponse{}, apperr.Unauthorized("this account has been deactivated")
 	}
-	s.opts.LoginFailures.Reset(req.Email)
+	s.opts.LoginFailures.Reset(perStore(ctx, req.Email))
 
-	token, expires, err := s.tokens.Issue(user.ID, user.TokenVersion)
+	token, expires, err := s.tokens.Issue(tenant.ID(ctx), user.ID, user.TokenVersion)
 	if err != nil {
 		return models.LoginResponse{}, err
 	}
@@ -176,7 +177,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, req mode
 	if err != nil {
 		return models.TokenResponse{}, err
 	}
-	token, expires, err := s.tokens.Issue(userID, version)
+	token, expires, err := s.tokens.Issue(tenant.ID(ctx), userID, version)
 	if err != nil {
 		return models.TokenResponse{}, err
 	}
@@ -287,7 +288,7 @@ func (s *UserService) RequestPasswordReset(ctx context.Context, req models.Forgo
 	if err := validators.ValidateForgotPassword(&req); err != nil {
 		return err
 	}
-	if ok, _ := s.opts.ResetRequests.Allow(req.Email); !ok {
+	if ok, _ := s.opts.ResetRequests.Allow(perStore(ctx, req.Email)); !ok {
 		return nil
 	}
 	s.inBackground(ctx, "password reset email", func(bg context.Context) error { return s.sendResetLink(bg, req.Email, ip) })
@@ -336,6 +337,12 @@ func (s *UserService) ResetPassword(ctx context.Context, req models.ResetPasswor
 }
 
 // ---------- helpers ----------
+
+// perStore makes a rate-limit key per store: the same email in two stores is
+// two different accounts.
+func perStore(ctx context.Context, key string) string {
+	return strconv.FormatInt(tenant.ID(ctx), 10) + ":" + key
+}
 
 // inBackground runs fn after the response has been sent. It gets its own
 // 30-second context, because the request's context ends with the response.

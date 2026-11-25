@@ -67,7 +67,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := database.Connect(ctx, cfg.DatabaseURL)
+	// The API runs as the stockwise_app role, under row-level security: every
+	// query only sees the store of the request (see internal/tenant).
+	db, err := database.ConnectApp(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
@@ -85,7 +87,7 @@ func run() error {
 	}
 
 	slog.Info("starting", "env", cfg.Env, "cors_origins", cfg.AllowedOrigins,
-		"rate_limits", cfg.RateLimits.Enabled, "mail_driver", cfg.Mail.Driver, "trust_proxy", cfg.TrustProxy)
+		"rate_limits", cfg.RateLimits.Enabled, "platform_domain", cfg.PlatformDomain, "default_store", cfg.DefaultStore, "mail_driver", cfg.Mail.Driver, "trust_proxy", cfg.TrustProxy)
 	err = server.Run(ctx, cfg, app.Handler)
 	app.Shutdown() // finish account emails being sent; stop the email worker
 	return err

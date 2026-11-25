@@ -118,7 +118,7 @@ func ensureCategory(ctx context.Context, tx *sql.Tx, in *models.ProductInput) er
 	if errors.Is(err, sql.ErrNoRows) {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO categories (name, name_ar) VALUES ($1, $2)
-			ON CONFLICT (lower(name)) DO NOTHING`, in.Category, in.CategoryAr)
+			ON CONFLICT (store_id, lower(name)) DO NOTHING`, in.Category, in.CategoryAr)
 		return err
 	}
 	if err != nil {

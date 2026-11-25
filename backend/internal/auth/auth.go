@@ -64,7 +64,17 @@ type Claims struct {
 	// Version is users.token_version when the token was issued. Raising the
 	// column in the database revokes every older token (see Authenticate).
 	Version int `json:"ver"`
+	// StoreID is the store the user belongs to. A token is only accepted on
+	// that store's host, so a login from one store is useless on another.
+	StoreID int64 `json:"sid"`
 	jwt.RegisteredClaims
+}
+
+// TokenInfo is what a verified token says.
+type TokenInfo struct {
+	UserID  int64
+	Version int
+	StoreID int64
 }
 
 // TokenManager signs and verifies HS256 tokens with a shared secret.
@@ -78,14 +88,15 @@ func NewTokenManager(secret string, ttl time.Duration) *TokenManager {
 	return &TokenManager{secret: []byte(secret), ttl: ttl, now: time.Now}
 }
 
-// Issue creates a signed token for userID at the given token version and
-// returns it with its expiry time.
-func (m *TokenManager) Issue(userID int64, version int) (string, time.Time, error) {
+// Issue creates a signed token for a user of a store at the given token
+// version and returns it with its expiry time.
+func (m *TokenManager) Issue(storeID, userID int64, version int) (string, time.Time, error) {
 	now := m.now()
 	expires := now.Add(m.ttl)
 	claims := Claims{
 		UserID:  userID,
 		Version: version,
+		StoreID: storeID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   strconv.FormatInt(userID, 10),
@@ -103,9 +114,9 @@ func (m *TokenManager) Issue(userID int64, version int) (string, time.Time, erro
 // ErrInvalidToken is returned for any token that fails verification.
 var ErrInvalidToken = errors.New("invalid or expired token")
 
-// Parse verifies the signature, algorithm, issuer and expiry, and returns the
-// user ID and token version inside the token.
-func (m *TokenManager) Parse(token string) (int64, int, error) {
+// Parse verifies the signature, algorithm, issuer and expiry, and returns
+// what the token says.
+func (m *TokenManager) Parse(token string) (TokenInfo, error) {
 	claims := &Claims{}
 	_, err := jwt.ParseWithClaims(token, claims,
 		func(*jwt.Token) (any, error) { return m.secret, nil },
@@ -115,7 +126,7 @@ func (m *TokenManager) Parse(token string) (int64, int, error) {
 		jwt.WithTimeFunc(m.now),
 	)
 	if err != nil || claims.UserID <= 0 {
-		return 0, 0, ErrInvalidToken
+		return TokenInfo{}, ErrInvalidToken
 	}
-	return claims.UserID, claims.Version, nil
+	return TokenInfo{UserID: claims.UserID, Version: claims.Version, StoreID: claims.StoreID}, nil
 }

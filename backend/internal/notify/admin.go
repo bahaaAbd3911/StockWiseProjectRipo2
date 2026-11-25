@@ -5,6 +5,7 @@ import (
 
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/models"
+	"ecommerce-backend/internal/tenant"
 )
 
 // Admin view of the email queue: what is waiting, what failed, and buttons to
@@ -127,6 +128,7 @@ func (o *Outbox) expectUnsent(ctx context.Context, id int64, res interface{ Rows
 // DeleteOldSent removes delivered emails older than the retention period
 // (the queue is not an archive; it would otherwise grow forever).
 func (o *Outbox) DeleteOldSent(ctx context.Context, keepDays int) (int64, error) {
+	ctx = tenant.AsPlatform(ctx) // retention applies to every store
 	res, err := o.db.ExecContext(ctx,
 		`DELETE FROM email_outbox WHERE sent_at < NOW() - make_interval(days => $1)`, keepDays)
 	if err != nil {

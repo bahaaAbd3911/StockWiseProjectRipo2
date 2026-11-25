@@ -19,6 +19,7 @@ import (
 	"ecommerce-backend/internal/repository"
 	"ecommerce-backend/internal/services"
 	"ecommerce-backend/internal/storage"
+	"ecommerce-backend/internal/tenant"
 )
 
 // App is the assembled application.
@@ -304,9 +305,12 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 
 	// Global middleware, outermost first: recover from panics, log the request,
 	// find the client IP, answer CORS (so even a 429 carries CORS headers and
-	// the browser can read it), apply the general per-IP limit, then route.
+	// the browser can read it), find the store from the host name (everything
+	// after this runs for that store only), apply the general per-IP limit,
+	// then route.
 	var h http.Handler = mux
 	h = middleware.RateLimit(general)(h)
+	h = middleware.Store(tenant.NewResolver(db, cfg.PlatformDomain, cfg.DefaultStore), cfg.TrustProxy)(h)
 	h = middleware.CORS(cfg.AllowedOrigins)(h)
 	h = middleware.RealIP(cfg.TrustProxy)(h)
 	h = middleware.SecurityHeaders(cfg.Production())(h) // also on 404/429 and panics
