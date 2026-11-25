@@ -24,6 +24,9 @@ type Message struct {
 	To      string
 	Subject string
 	Text    string
+	// FromName is the display name in From (e.g. the store's name); the
+	// address stays SMTP_FROM's. "" = SMTP_FROM as configured.
+	FromName string
 }
 
 // Mailer delivers messages.
@@ -73,7 +76,7 @@ type SMTPMailer struct {
 }
 
 func (s *SMTPMailer) Send(ctx context.Context, m Message) error {
-	if strings.ContainsAny(m.To, "\r\n") || strings.ContainsAny(m.Subject, "\r\n") {
+	if strings.ContainsAny(m.To, "\r\n") || strings.ContainsAny(m.Subject, "\r\n") || strings.ContainsAny(m.FromName, "\r\n") {
 		return errors.New("invalid header value") // blocks header injection
 	}
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
@@ -86,8 +89,13 @@ func (s *SMTPMailer) Send(ctx context.Context, m Message) error {
 		fromAddr = strings.TrimSuffix(fromAddr[i+1:], ">")
 	}
 
+	from := s.cfg.From
+	if m.FromName != "" {
+		// RFC 2047-encoded so Arabic or quotes in a store name are safe.
+		from = mime.QEncoding.Encode("utf-8", m.FromName) + " <" + fromAddr + ">"
+	}
 	body := strings.Join([]string{
-		"From: " + s.cfg.From,
+		"From: " + from,
 		"To: " + m.To,
 		"Subject: " + mime.QEncoding.Encode("utf-8", m.Subject),
 		"Date: " + time.Now().Format(time.RFC1123Z),

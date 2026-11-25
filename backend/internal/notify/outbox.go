@@ -44,16 +44,16 @@ func (o *Outbox) EnqueueOrLog(ctx context.Context, kind string, m mail.Message) 
 // store_id has no default).
 func enqueueFor(ctx context.Context, q database.Querier, storeID int64, kind string, m mail.Message) error {
 	_, err := q.ExecContext(ctx,
-		`INSERT INTO email_outbox (store_id, kind, to_address, subject, body) VALUES ($1, $2, $3, $4, $5)`,
-		storeID, kind, m.To, m.Subject, m.Text)
+		`INSERT INTO email_outbox (store_id, kind, to_address, from_name, subject, body) VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6)`,
+		storeID, kind, m.To, m.FromName, m.Subject, m.Text)
 	return err
 }
 
 // enqueue queues an email for the current store (store_id defaults to it).
 func enqueue(ctx context.Context, q database.Querier, kind string, m mail.Message) error {
 	_, err := q.ExecContext(ctx,
-		`INSERT INTO email_outbox (kind, to_address, subject, body) VALUES ($1, $2, $3, $4)`,
-		kind, m.To, m.Subject, m.Text)
+		`INSERT INTO email_outbox (kind, to_address, from_name, subject, body) VALUES ($1, $2, NULLIF($3, ''), $4, $5)`,
+		kind, m.To, m.FromName, m.Subject, m.Text)
 	return err
 }
 
@@ -73,7 +73,8 @@ type WorkerOptions struct {
 	// DebtReminderEvery: customers with an open balance get a reminder this
 	// long after their last charge, then again every period. 0 = off.
 	DebtReminderEvery time.Duration
-	Templates         Templates
+	// Branding gives each reminder its store's name, links and currency.
+	Branding *Branding
 	// KeepSentDays: delivered emails are deleted after this many days (default 30).
 	KeepSentDays int
 }
@@ -152,7 +153,7 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 	sent := 0
 	err := database.WithTx(ctx, w.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
-			SELECT id, to_address, subject, body, attempts FROM email_outbox
+			SELECT id, to_address, COALESCE(from_name, ''), subject, body, attempts FROM email_outbox
 			WHERE sent_at IS NULL AND attempts < $1 AND next_attempt_at <= NOW()
 			ORDER BY id
 			LIMIT $2
@@ -168,7 +169,7 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 		var jobs []job
 		for rows.Next() {
 			var j job
-			if err := rows.Scan(&j.id, &j.msg.To, &j.msg.Subject, &j.msg.Text, &j.attempts); err != nil {
+			if err := rows.Scan(&j.id, &j.msg.To, &j.msg.FromName, &j.msg.Subject, &j.msg.Text, &j.attempts); err != nil {
 				rows.Close()
 				return err
 			}
@@ -226,8 +227,10 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 	queued := 0
 	err := database.WithTx(ctx, w.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
-			SELECT u.id, u.store_id, u.email, u.first_name, b.balance
+			SELECT u.id, u.store_id, u.email, u.first_name, b.balance,
+			       s.slug, s.name, s.currency, s.timezone
 			FROM users u
+			JOIN stores s ON s.id = u.store_id AND s.status = 'active'
 			CROSS JOIN LATERAL (
 				SELECT COALESCE(SUM(t.amount), 0) AS balance,
 				       MAX(t.created_at) FILTER (WHERE t.amount > 0) AS last_charge
@@ -244,13 +247,15 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 		type due struct {
 			id      int64
 			store   int64
+			shop    tenant.Store
 			to      Recipient
 			balance decimal.Decimal
 		}
 		var list []due
 		for rows.Next() {
 			var d due
-			if err := rows.Scan(&d.id, &d.store, &d.to.Email, &d.to.FirstName, &d.balance); err != nil {
+			if err := rows.Scan(&d.id, &d.store, &d.to.Email, &d.to.FirstName, &d.balance,
+				&d.shop.Slug, &d.shop.Name, &d.shop.Currency, &d.shop.Timezone); err != nil {
 				rows.Close()
 				return err
 			}
@@ -262,7 +267,7 @@ func (w *Worker) QueueDebtReminders(ctx context.Context) (int, error) {
 		}
 		for _, d := range list {
 			// Platform mode has no current store, so the reminder names its store.
-			if err := enqueueFor(ctx, tx, d.store, KindDebtReminder, w.opts.Templates.DebtReminder(d.to, d.balance)); err != nil {
+			if err := enqueueFor(ctx, tx, d.store, KindDebtReminder, w.opts.Branding.ForStore(d.shop).DebtReminder(d.to, d.balance)); err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE users SET debt_reminded_at = NOW() WHERE id = $1`, d.id); err != nil {

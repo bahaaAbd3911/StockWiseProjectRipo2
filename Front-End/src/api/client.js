@@ -1,5 +1,8 @@
 // Minimal fetch wrapper for the Go backend.
-const BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/$/, "");
+// By default the API is on the same address as the shop (/api): the backend
+// knows which store this is from the host name. VITE_API_URL can point
+// elsewhere (single-store setups with the API on another domain).
+const BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const TOKEN_KEY = "authToken";
 
 export const tokenStore = {
@@ -50,8 +53,10 @@ const errorMessage = (data, fallback) => {
   return data?.error || data?.message || fallback;
 };
 
-async function send(path, { method = "GET", body, form } = {}) {
-  const token = tokenStore.get();
+// token: send this token instead of the shop login (platform admin calls).
+// The "logged out" handler only runs for the shop login.
+async function send(path, { method = "GET", body, form, token: explicitToken } = {}) {
+  const token = explicitToken ?? tokenStore.get();
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -72,7 +77,7 @@ async function send(path, { method = "GET", body, form } = {}) {
   const data = text ? parse(text) : null;
 
   if (!response.ok) {
-    if (response.status === 401 && token) onUnauthorized?.();
+    if (response.status === 401 && token && explicitToken === undefined) onUnauthorized?.();
     throw new ApiError(
       response.status,
       errorMessage(data, response.statusText),

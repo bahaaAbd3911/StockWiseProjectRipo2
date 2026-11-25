@@ -19,7 +19,12 @@ import (
 //
 // Paths that are the same for every store (health checks, uploaded images
 // with random names) skip the lookup.
-func Store(resolver *tenant.Resolver, trustProxy bool) func(http.Handler) http.Handler {
+//
+// The platform admin host (platformHost, e.g. admin.myplatform.com) is not a
+// store: it only serves the /api/platform API, and that API only answers
+// there.
+func Store(resolver *tenant.Resolver, trustProxy bool, platformHost string) func(http.Handler) http.Handler {
+	platformHost = tenant.NormalizeHost(platformHost)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if storeless(r.URL.Path) {
@@ -31,6 +36,19 @@ func Store(resolver *tenant.Resolver, trustProxy bool) func(http.Handler) http.H
 				if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); fwd != "" {
 					host = fwd
 				}
+			}
+			onPlatformHost := platformHost != "" && tenant.NormalizeHost(host) == platformHost
+			if strings.HasPrefix(r.URL.Path, "/api/platform/") {
+				if !onPlatformHost {
+					httpx.WriteError(w, r, apperr.NotFound("not found"))
+					return
+				}
+				next.ServeHTTP(w, r) // no store: platform handlers work across stores
+				return
+			}
+			if onPlatformHost {
+				httpx.WriteError(w, r, apperr.NotFound("store not found"))
+				return
 			}
 			store, err := resolver.Resolve(r.Context(), host)
 			switch {

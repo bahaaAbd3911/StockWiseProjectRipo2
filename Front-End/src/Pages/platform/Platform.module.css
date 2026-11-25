@@ -1,0 +1,48 @@
+.shell {
+  min-height: 100vh;
+  background: var(--adm-bg);
+}
+
+.content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.login {
+  max-width: 420px;
+  margin: 60px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.muted {
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: 70px 14px 20px;
+  }
+}

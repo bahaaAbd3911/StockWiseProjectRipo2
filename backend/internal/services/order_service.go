@@ -18,11 +18,11 @@ type OrderService struct {
 	orders *repository.OrderRepository
 	users  *repository.UserRepository
 	outbox *notify.Outbox
-	tpl    notify.Templates
+	tpl    *notify.Branding // each store's name, links and currency
 }
 
 func NewOrderService(orders *repository.OrderRepository, users *repository.UserRepository,
-	outbox *notify.Outbox, tpl notify.Templates) *OrderService {
+	outbox *notify.Outbox, tpl *notify.Branding) *OrderService {
 	return &OrderService{orders: orders, users: users, outbox: outbox, tpl: tpl}
 }
 
@@ -49,7 +49,7 @@ func (s *OrderService) Checkout(ctx context.Context, userID int64, req models.Cr
 		return models.Order{}, err
 	}
 	if to, ok := s.recipient(ctx, userID); ok {
-		s.outbox.EnqueueOrLog(ctx, notify.KindOrderPlaced, s.tpl.OrderPlaced(to, order))
+		s.outbox.EnqueueOrLog(ctx, notify.KindOrderPlaced, s.tpl.For(ctx).OrderPlaced(to, order))
 	}
 	return order, nil
 }
@@ -119,7 +119,7 @@ func (s *OrderService) statusEmail(ctx context.Context, order models.Order) {
 	if !ok {
 		return
 	}
-	if msg, ok := s.tpl.OrderStatus(to, order); ok {
+	if msg, ok := s.tpl.For(ctx).OrderStatus(to, order); ok {
 		s.outbox.EnqueueOrLog(ctx, notify.KindOrderStatus, msg)
 	}
 }

@@ -125,7 +125,7 @@ func TestOrderNotifications(t *testing.T) {
 	must(t, 200, "POST", "/api/cart/items", kim, J{"product_id": n(product), "quantity": 2})
 	order := id(must(t, 201, "POST", "/api/orders", kim, nil))
 	placed := waitForEmails(t, "kim@example.com", "Order #"+order+" received", 1)[0]
-	for _, want := range []string{"Teapot", "40.00 JOD", "Main St", "http://localhost:5173/orders/" + order, "TestShop"} {
+	for _, want := range []string{"Teapot", "40.00 JOD", "Main St", "http://localhost:5173/orders/" + order, "StockWise"} { // the main store's name (stores.name)
 		if !strings.Contains(placed.Subject+placed.Text, want) {
 			t.Errorf("order email should mention %q:\n%s", want, placed.Text)
 		}
@@ -219,7 +219,7 @@ func TestDebtNotificationsAndReminders(t *testing.T) {
 	// Reminders: due once the last charge is older than the reminder period.
 	reminders := notify.NewWorker(testDB, nil, notify.WorkerOptions{
 		DebtReminderEvery: time.Hour,
-		Templates:         notify.Templates{Store: "TestShop", FrontendURL: "http://localhost:5173", Currency: "JOD"},
+		Branding:          notify.NewBranding(notify.Templates{Store: "TestShop", FrontendURL: "http://localhost:5173", Currency: "JOD"}, nil, "", ""),
 	})
 	ctx := context.Background()
 	if _, err := reminders.QueueDebtReminders(ctx); err != nil {

@@ -16,6 +16,7 @@ var allKeys = []string{
 	"EMAIL_VERIFY_TTL", "REQUIRE_EMAIL_VERIFICATION", "EMAIL_POLL_INTERVAL", "DEBT_REMINDER_INTERVAL",
 	"PUBLIC_URL", "STORAGE_DRIVER", "UPLOAD_DIR", "MAX_UPLOAD_MB", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET",
 	"S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_URL", "S3_INSECURE",
+	"PLATFORM_DOMAIN", "PLATFORM_ADMIN_HOST", "STORE_URL", "STORE_TIMEZONE", "LOW_STOCK_THRESHOLD",
 }
 
 func setEnv(t *testing.T, vars map[string]string) {
@@ -204,5 +205,33 @@ func TestTLSSettings(t *testing.T) {
 				t.Fatalf("want a TLS error, got %v", err)
 			}
 		})
+	}
+}
+
+func TestPlatformSettings(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://u:p@localhost/x", "JWT_SECRET": strings.Repeat("x", 32)}
+
+	setEnv(t, with(base, map[string]string{"PLATFORM_DOMAIN": "MyPlatform.com.", "FRONTEND_URL": "https://shop.myplatform.com"}))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PlatformDomain != "myplatform.com" || cfg.PlatformAdminHost != "admin.myplatform.com" ||
+		cfg.StoreURL != "https://{slug}.myplatform.com" {
+		t.Fatalf("platform defaults: %q %q %q", cfg.PlatformDomain, cfg.PlatformAdminHost, cfg.StoreURL)
+	}
+
+	setEnv(t, with(base, map[string]string{"PLATFORM_DOMAIN": "localhost", "PLATFORM_ADMIN_HOST": "off"}))
+	if cfg, err := Load(); err != nil || cfg.PlatformAdminHost != "" || cfg.StoreURL != "http://{slug}.localhost:5173" {
+		t.Fatalf("local development: %+v %v", cfg.StoreURL, err)
+	}
+
+	setEnv(t, with(base, map[string]string{"STORE_URL": "https://shops.example.com/no-slug"}))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "STORE_URL") {
+		t.Fatalf("STORE_URL without {slug} must be refused: %v", err)
+	}
+	setEnv(t, with(base, map[string]string{"PLATFORM_DOMAIN": "https://myplatform.com"}))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PLATFORM_DOMAIN") {
+		t.Fatalf("a URL is not a domain: %v", err)
 	}
 }

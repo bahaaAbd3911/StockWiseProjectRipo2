@@ -52,3 +52,19 @@ func TestRejectsBadTokens(t *testing.T) {
 		t.Error("garbage was accepted")
 	}
 }
+
+func TestPlatformAndStoreTokensDoNotMix(t *testing.T) {
+	store := NewTokenManager(secret, time.Hour)
+	platform := NewPlatformTokenManager(secret, time.Hour)
+	st, _, _ := store.Issue(1, 5, 0)
+	pt, _, _ := platform.Issue(0, 5, 0)
+	if _, err := platform.Parse(st); err == nil {
+		t.Error("a store login must not work as a platform login")
+	}
+	if _, err := store.Parse(pt); err == nil {
+		t.Error("a platform login must not work as a store login")
+	}
+	if info, err := platform.Parse(pt); err != nil || info.UserID != 5 {
+		t.Errorf("platform token: %+v %v", info, err)
+	}
+}

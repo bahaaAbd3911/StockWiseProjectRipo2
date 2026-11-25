@@ -25,6 +25,10 @@ type Templates struct {
 	Store       string // STORE_NAME, shown in subjects and signatures
 	FrontendURL string // FRONTEND_URL, for "view your order" links
 	Currency    string // CURRENCY, printed after amounts ("" = none)
+
+	// Pages opened by emailed links (filled by Branding).
+	VerifyURL string // e.g. https://ahmad.myplatform.com/verify-email
+	ResetURL  string // e.g. https://ahmad.myplatform.com/reset-password
 }
 
 // Email kinds, stored in email_outbox.kind.
@@ -57,8 +61,9 @@ func (t Templates) link(path string) string {
 // compose builds a bilingual message with the shop's signature.
 func (t Templates) compose(to Recipient, subjectEn, subjectAr, en, ar string) mail.Message {
 	return mail.Message{
-		To:      to.Email,
-		Subject: fmt.Sprintf("%s - %s / %s", t.Store, subjectEn, subjectAr),
+		To:       to.Email,
+		FromName: t.Store,
+		Subject:  fmt.Sprintf("%s - %s / %s", t.Store, subjectEn, subjectAr),
 		Text: fmt.Sprintf("Hello %s,\n\n%s\n\n%s\n\n---\n\nمرحباً %s،\n\n%s\n\n%s\n",
 			to.FirstName, strings.TrimSpace(en), t.Store, to.FirstName, strings.TrimSpace(ar), t.Store),
 	}
@@ -94,6 +99,28 @@ If you did not ask for this, ignore this email - your password stays the same.`,
 %s
 
 إذا لم تطلب ذلك، تجاهل هذه الرسالة - لن تتغير كلمة المرور.`, validMinutes, link))
+}
+
+// StoreInvite goes to the admin of a newly created store: the link (to the
+// store's own reset-password page) lets them choose their password.
+func (t Templates) StoreInvite(to Recipient, link string, validHours int) mail.Message {
+	return t.compose(to, "Your store is ready", "متجرك جاهز",
+		fmt.Sprintf(`Your online store "%s" has been created and you are its administrator.
+
+Choose your password within %d hours with this link:
+
+%s
+
+Then sign in at %s with this email address to add products and customise the store.`,
+			t.Store, validHours, link, t.FrontendURL),
+		fmt.Sprintf(`تم إنشاء متجرك الإلكتروني "%s" وأنت مديره.
+
+اختر كلمة المرور خلال %d ساعة من خلال هذا الرابط:
+
+%s
+
+ثم سجّل الدخول في %s بهذا البريد الإلكتروني لإضافة المنتجات وتخصيص المتجر.`,
+			t.Store, validHours, link, t.FrontendURL))
 }
 
 // ---------- orders ----------

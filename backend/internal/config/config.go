@@ -60,6 +60,14 @@ type Config struct {
 	// DEFAULT_STORE= (empty) so unknown hosts are refused.
 	PlatformDomain string // PLATFORM_DOMAIN, default ""
 	DefaultStore   string // DEFAULT_STORE, default main
+	// PlatformAdminHost is where the platform super admin works (the
+	// /api/platform API only answers there). PLATFORM_ADMIN_HOST, default
+	// admin.PLATFORM_DOMAIN; "" = platform admin off.
+	PlatformAdminHost string
+	// StoreURL is a store's public frontend address, with {slug}, e.g.
+	// https://{slug}.myplatform.com (used in emails). STORE_URL, default
+	// FRONTEND_URL's scheme and port with {slug}.PLATFORM_DOMAIN.
+	StoreURL string
 
 	// Admin dashboard.
 	StoreTimezone     *time.Location // STORE_TIMEZONE, default Asia/Amman: when a "day" starts
@@ -255,6 +263,15 @@ func Load() (Config, error) {
 		cfg.DefaultStore = "main"
 	}
 
+	// Empty = admin.PLATFORM_DOMAIN; "off" = no platform admin.
+	cfg.PlatformAdminHost = strings.ToLower(getenv("PLATFORM_ADMIN_HOST", ""))
+	switch {
+	case cfg.PlatformAdminHost == "off":
+		cfg.PlatformAdminHost = ""
+	case cfg.PlatformAdminHost == "" && cfg.PlatformDomain != "":
+		cfg.PlatformAdminHost = "admin." + cfg.PlatformDomain
+	}
+
 	cfg.StoreName = getenv("STORE_NAME", "StockWise")
 	cfg.Currency = getenv("CURRENCY", "")
 	if loc, err := time.LoadLocation(getenv("STORE_TIMEZONE", "Asia/Amman")); err != nil {
@@ -270,6 +287,19 @@ func Load() (Config, error) {
 	cfg.FrontendURL = strings.TrimRight(getenv("FRONTEND_URL", "http://localhost:5173"), "/")
 	if !storage.ValidPublicURL(cfg.FrontendURL) {
 		bad("FRONTEND_URL must be an http(s) URL such as https://shop.example.com")
+	}
+	cfg.StoreURL = strings.TrimRight(getenv("STORE_URL", ""), "/")
+	if cfg.StoreURL == "" && cfg.PlatformDomain != "" {
+		if u, err := url.Parse(cfg.FrontendURL); err == nil {
+			port := ""
+			if p := u.Port(); p != "" {
+				port = ":" + p
+			}
+			cfg.StoreURL = u.Scheme + "://{slug}." + cfg.PlatformDomain + port
+		}
+	}
+	if cfg.StoreURL != "" && (!strings.Contains(cfg.StoreURL, "{slug}") || !storage.ValidPublicURL(strings.ReplaceAll(cfg.StoreURL, "{slug}", "x"))) {
+		bad("STORE_URL must be an http(s) address containing {slug}, e.g. https://{slug}.myplatform.com")
 	}
 
 	cfg.PasswordResetURL = getenv("PASSWORD_RESET_URL", cfg.FrontendURL+"/reset-password")

@@ -18,11 +18,11 @@ type WaitingListService struct {
 	items  *repository.WaitingListRepository
 	users  *repository.UserRepository
 	outbox *notify.Outbox
-	tpl    notify.Templates
+	tpl    *notify.Branding // each store's name, links and currency
 }
 
 func NewWaitingListService(items *repository.WaitingListRepository, users *repository.UserRepository,
-	outbox *notify.Outbox, tpl notify.Templates) *WaitingListService {
+	outbox *notify.Outbox, tpl *notify.Branding) *WaitingListService {
 	return &WaitingListService{items: items, users: users, outbox: outbox, tpl: tpl}
 }
 
@@ -41,7 +41,7 @@ func (s *WaitingListService) NotifyRestock(ctx context.Context, productID int64)
 
 func (s *WaitingListService) backInStockEmail(ctx context.Context, it models.WaitingListItem) {
 	if to, ok := lookupRecipient(ctx, s.users, it.UserID); ok {
-		s.outbox.EnqueueOrLog(ctx, notify.KindBackInStock, s.tpl.BackInStock(to, it.ProductID, it.ProductName, it.ProductNameAr))
+		s.outbox.EnqueueOrLog(ctx, notify.KindBackInStock, s.tpl.For(ctx).BackInStock(to, it.ProductID, it.ProductName, it.ProductNameAr))
 	}
 }
 

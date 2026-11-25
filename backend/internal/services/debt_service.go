@@ -26,11 +26,11 @@ type DebtService struct {
 	debts  *repository.DebtRepository
 	users  *repository.UserRepository
 	outbox *notify.Outbox
-	tpl    notify.Templates
+	tpl    *notify.Branding // each store's name, links and currency
 }
 
 func NewDebtService(debts *repository.DebtRepository, users *repository.UserRepository,
-	outbox *notify.Outbox, tpl notify.Templates) *DebtService {
+	outbox *notify.Outbox, tpl *notify.Branding) *DebtService {
 	return &DebtService{debts: debts, users: users, outbox: outbox, tpl: tpl}
 }
 
@@ -73,7 +73,7 @@ func (s *DebtService) RecordPayment(ctx context.Context, adminID, userID int64, 
 		return st, err
 	}
 	if to, ok := lookupRecipient(ctx, s.users, userID); ok {
-		s.outbox.EnqueueOrLog(ctx, notify.KindDebtPayment, s.tpl.DebtPayment(to, req.Amount, st.Account.Balance))
+		s.outbox.EnqueueOrLog(ctx, notify.KindDebtPayment, s.tpl.For(ctx).DebtPayment(to, req.Amount, st.Account.Balance))
 	}
 	return st, nil
 }
@@ -90,7 +90,7 @@ func (s *DebtService) RecordAdjustment(ctx context.Context, adminID, userID int6
 		return st, err
 	}
 	if to, ok := lookupRecipient(ctx, s.users, userID); ok {
-		s.outbox.EnqueueOrLog(ctx, notify.KindDebtAdjustment, s.tpl.DebtAdjustment(to, req.Amount, req.Note, st.Account.Balance))
+		s.outbox.EnqueueOrLog(ctx, notify.KindDebtAdjustment, s.tpl.For(ctx).DebtAdjustment(to, req.Amount, req.Note, st.Account.Balance))
 	}
 	return st, nil
 }

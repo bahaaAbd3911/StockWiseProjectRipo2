@@ -343,6 +343,37 @@ email sender name and links, currency and time zone in emails, upload folders.
 Existing data became store 1, `main`. Migration 000007 has a `down` file
 that only works while `main` is the only store.
 
+### 6.0b The platform super admin
+The people who run the platform (not any store) create and manage stores.
+
+- **Where:** only on `PLATFORM_ADMIN_HOST` (default `admin.<PLATFORM_DOMAIN>`).
+  The `/api/platform` API answers nowhere else (404), and that host serves
+  nothing but it. The React app shows the platform section there instead of a shop.
+- **Who:** rows of `platform_admins` - separate from store users, with their
+  own login tokens (a different issuer): a store admin's token is refused by
+  the platform API and a platform token by every store. There is no sign-up;
+  create the first one on the server:
+  `go run ./cmd/platform create-admin -email you@example.com -first Sara -last Ahmad`
+  (prints a random password once).
+- **Creating a store** (`POST /api/platform/stores`) makes, in one
+  transaction: the store record, its settings row (with its name), its admin
+  account (role admin, email confirmed, no usable password) and an invite
+  link. The admin gets an email, sent as the store, with a link to the store's
+  own reset-password page (valid 72 h) to choose a password. The store is
+  live at `<slug>.PLATFORM_DOMAIN` at once - no new database, no deployment.
+  Slugs are DNS labels; `admin`, `www`, `api`, `mail` and others are reserved.
+- **Managing:** list with products / customers / orders / revenue per store,
+  edit name, currency and time zone, suspend (everyone gets 403, nothing is
+  deleted) and reactivate, send the invite again (the old link stops working).
+- Platform requests run in platform mode (they can see every store's rows);
+  store requests never can.
+
+**Per-store emails:** every email now uses its store's name (subject,
+signature and sender name: `"Omar Shop" <SMTP_FROM address>`), links to the
+store's own address (`STORE_URL` with the slug; the default store keeps
+`FRONTEND_URL`) and the store's currency (`CURRENCY` when the store has none).
+`STORE_NAME` is only a fallback now: a store's name comes from its record.
+
 ### 6.1 Accounts and login
 - **Register** (`POST /api/register`): validates, checks the email is free
   (case-insensitive), hashes the password with bcrypt, creates a *customer*
@@ -652,6 +683,7 @@ notify.Worker every EMAIL_POLL_INTERVAL (5 s):
 | `000002_offers_bundles_debts` | offers, offer_products, bundles, bundle_items, cart_bundles, order_bundles, order_bundle_items, users.credit_limit, customer_debt_transactions, `pay_later` payment method, `deferred` payment status |
 | `000003_auth_security` | users.token_version, password_reset_tokens |
 | `000004_email_verification_notifications` | users.email_verified_at (existing users set to verified), users.debt_reminded_at, email_verification_tokens, email_outbox |
+| `000008_platform` | platform_admins; email_outbox.from_name (per-store sender name) |
 | `000007_multi_tenant` | stores, store_domains; store_id (default = current store) on every store table; store-aware foreign keys; per-store unique email / category name / coupon code; one settings row per store; row-level security policies; role stockwise_app; existing data = store 1 `main` |
 | `000006_categories_settings` | categories (name, Arabic name, icon, on/off; seeded from the products' categories), store_settings (one JSON row: store name, logo, theme colors) |
 | `000005_coupons_dashboard` | coupons, coupon_products, coupon_redemptions, carts.coupon_id, orders.subtotal_amount / discount_amount / coupon_id / coupon_code (+ check total = subtotal - discount), indexes on orders.created_at and status |
@@ -679,7 +711,7 @@ comments: [.env.example](../.env.example) (development) and
 | Group | Variables |
 |---|---|
 | Basics | `APP_ENV` (development / production), `APP_PORT`, `LOG_FORMAT` (text / json; json is the production default) |
-| Stores | `PLATFORM_DOMAIN` (stores at `<slug>.PLATFORM_DOMAIN`), `DEFAULT_STORE` (store for other hosts, default `main`; empty = 404) |
+| Stores | `PLATFORM_DOMAIN` (stores at `<slug>.PLATFORM_DOMAIN`), `DEFAULT_STORE` (store for other hosts, default `main`; empty = 404), `PLATFORM_ADMIN_HOST` (default `admin.<PLATFORM_DOMAIN>`), `STORE_URL` (store address in emails, with `{slug}`) |
 | Database | `DATABASE_URL`, `DB_MAX_CONNS` |
 | Logins | `JWT_SECRET` (≥ 32 chars), `JWT_TTL` |
 | Browser access | `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY` |
@@ -825,6 +857,7 @@ data is never touched. Emails go to an in-memory mailer.
 | `TestImageUploads` | upload, serve, refusals (fake, too big, missing, not admin), deletes remove files, profile pictures |
 | `TestProductWithImagesAndColors`, `TestCategories`, `TestStoreSettings`, `TestAdminUsers` | the endpoints and shapes the React frontend uses: media saved with the product, category rename and hide, settings validation (no script logos, bad colors), user management safety rules |
 | `TestStoreFromHostName`, `TestStoresAreIsolated`, `TestDatabaseEnforcesIsolation` | host name -> store, unknown 404 / suspended 403; one store cannot list, read, edit or delete another's products, orders or users, even with edited IDs; logins refused on other stores; same email / coupon code / category in two stores; per-store settings and dashboard; raw SQL on the API's connection: no store = no rows, no cross-store reads, writes or links, no store switch inside a transaction |
+| `TestPlatformAPIOnlyOnPlatformHost`, `TestPlatformCreatesReadyStore` | platform API only on its host, tokens never cross between platform and stores; store creation validation (reserved, invalid, taken slugs), store + settings + admin + invite in one step, invite link on the store's own address and only usable there, branded customer emails, counts, edit, suspend (403) and reactivate, re-invite replaces the link |
 | `TestCoupons` | validation, minimum order, case-insensitive codes, stacking on offers, once per customer, cancel gives the use back, category scope, usage limit race between two carts, disabled codes block checkout, order keeps the code after delete |
 | `TestAdminDashboard` | local days, today's figures move with a new order, status counts, low stock, admin only, `days` limits |
 | `TestAdminEmailQueue` | summary, filters, detail, retry one / all failed, cancel, 409 on sent emails, retention clean-up, admin only |
@@ -934,6 +967,16 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 | GET | `/api/admin/users/{id}` | `{user, orders, favorites}` |
 | PUT | `/api/admin/users/{id}` | same body; empty password keeps it; a new password, role change or deactivation logs the user out |
 | DELETE | `/api/admin/users/{id}` | deletes a user with no orders, otherwise deactivates; an admin cannot remove themselves or the last admin |
+
+**Platform super admin (only on PLATFORM_ADMIN_HOST, platform login)**
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/platform/login` | `{email, password}` -> `{admin, token, expires_at}` |
+| GET | `/api/platform/me` | |
+| GET / POST | `/api/platform/stores` | GET `?search= &status=`; POST `{slug, name, currency?, timezone?, admin: {first_name, last_name, email}}` -> `{store, message}` |
+| GET / PUT | `/api/platform/stores/{id}` | PUT `{name, currency, timezone}` (the slug never changes) |
+| POST | `/api/platform/stores/{id}/suspend`, `/activate`, `/invite` | |
 
 **Coupons and dashboard (admin)**
 

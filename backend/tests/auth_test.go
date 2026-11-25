@@ -79,6 +79,8 @@ func testConfig() config.Config {
 		JWTTTL:                   time.Hour,
 		PlatformDomain:           testPlatformDomain, // stores at <slug>.shop.test
 		DefaultStore:             "main",             // 127.0.0.1 (the test server) is the main store
+		PlatformAdminHost:        "admin." + testPlatformDomain,
+		StoreURL:                 "http://{slug}." + testPlatformDomain,
 		AllowedOrigins:           []string{"http://localhost:5173"},
 		StoreName:                "TestShop",
 		FrontendURL:              "http://localhost:5173",

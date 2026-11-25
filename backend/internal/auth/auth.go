@@ -56,7 +56,12 @@ func UserID(ctx context.Context) int64 {
 	return id.UserID
 }
 
-const issuer = "ecommerce-backend"
+// Store logins and platform-admin logins are signed with different issuers,
+// so a token of one kind is never accepted where the other is expected.
+const (
+	issuer         = "ecommerce-backend"
+	platformIssuer = "ecommerce-platform"
+)
 
 // Claims is the JWT payload.
 type Claims struct {
@@ -79,13 +84,19 @@ type TokenInfo struct {
 
 // TokenManager signs and verifies HS256 tokens with a shared secret.
 type TokenManager struct {
+	issuer string
 	secret []byte
 	ttl    time.Duration
 	now    func() time.Time
 }
 
 func NewTokenManager(secret string, ttl time.Duration) *TokenManager {
-	return &TokenManager{secret: []byte(secret), ttl: ttl, now: time.Now}
+	return &TokenManager{issuer: issuer, secret: []byte(secret), ttl: ttl, now: time.Now}
+}
+
+// NewPlatformTokenManager signs platform-admin logins (StoreID is 0 in them).
+func NewPlatformTokenManager(secret string, ttl time.Duration) *TokenManager {
+	return &TokenManager{issuer: platformIssuer, secret: []byte(secret), ttl: ttl, now: time.Now}
 }
 
 // Issue creates a signed token for a user of a store at the given token
@@ -98,7 +109,7 @@ func (m *TokenManager) Issue(storeID, userID int64, version int) (string, time.T
 		Version: version,
 		StoreID: storeID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
+			Issuer:    m.issuer,
 			Subject:   strconv.FormatInt(userID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expires),
@@ -121,7 +132,7 @@ func (m *TokenManager) Parse(token string) (TokenInfo, error) {
 	_, err := jwt.ParseWithClaims(token, claims,
 		func(*jwt.Token) (any, error) { return m.secret, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		jwt.WithIssuer(issuer),
+		jwt.WithIssuer(m.issuer),
 		jwt.WithExpirationRequired(),
 		jwt.WithTimeFunc(m.now),
 	)
@@ -129,4 +140,17 @@ func (m *TokenManager) Parse(token string) (TokenInfo, error) {
 		return TokenInfo{}, ErrInvalidToken
 	}
 	return TokenInfo{UserID: claims.UserID, Version: claims.Version, StoreID: claims.StoreID}, nil
+}
+
+type platformAdminKey struct{}
+
+// WithPlatformAdmin marks the request as made by a logged-in platform admin.
+func WithPlatformAdmin(ctx context.Context, adminID int64) context.Context {
+	return context.WithValue(ctx, platformAdminKey{}, adminID)
+}
+
+// PlatformAdminID is the logged-in platform admin, or 0.
+func PlatformAdminID(ctx context.Context) int64 {
+	id, _ := ctx.Value(platformAdminKey{}).(int64)
+	return id
 }

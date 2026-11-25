@@ -7,6 +7,7 @@ package routes
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"ecommerce-backend/internal/auth"
 	"ecommerce-backend/internal/config"
@@ -21,6 +22,16 @@ import (
 	"ecommerce-backend/internal/storage"
 	"ecommerce-backend/internal/tenant"
 )
+
+// StoreURL is a store's public frontend address: the default store (and any
+// store when no platform is configured) uses FRONTEND_URL; others STORE_URL
+// with their slug, e.g. https://ahmad.myplatform.com.
+func StoreURL(cfg config.Config, s tenant.Store) string {
+	if cfg.StoreURL == "" || s.Slug == "" || s.Slug == cfg.DefaultStore {
+		return cfg.FrontendURL
+	}
+	return strings.ReplaceAll(cfg.StoreURL, "{slug}", s.Slug)
+}
 
 // App is the assembled application.
 type App struct {
@@ -54,12 +65,16 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	tpl := notify.Templates{Store: cfg.StoreName, FrontendURL: cfg.FrontendURL, Currency: cfg.Currency}
+	// Emails carry the name, address and currency of the store they are for.
+	tpl := notify.NewBranding(
+		notify.Templates{Store: cfg.StoreName, FrontendURL: cfg.FrontendURL, Currency: cfg.Currency},
+		func(s tenant.Store) string { return StoreURL(cfg, s) },
+		cfg.EmailVerifyURL, cfg.PasswordResetURL)
 	outbox := notify.NewOutbox(db)
 	worker := notify.NewWorker(db, mailer, notify.WorkerOptions{
 		Interval:          cfg.EmailPollInterval,
 		DebtReminderEvery: cfg.DebtReminderEvery,
-		Templates:         tpl,
+		Branding:          tpl,
 	})
 
 	// ---- repositories (SQL) ----
@@ -80,10 +95,8 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
 	userSvc := services.NewUserService(userRepo, tokens, services.UserServiceOptions{
 		Mailer:        mailer,
-		Templates:     tpl,
-		ResetURL:      cfg.PasswordResetURL,
+		Branding:      tpl,
 		ResetTTL:      cfg.PasswordResetTTL,
-		VerifyURL:     cfg.EmailVerifyURL,
 		VerifyTTL:     cfg.EmailVerifyTTL,
 		LoginFailures: loginFailures,
 		ResetRequests: resetRequests,
@@ -303,6 +316,25 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	admin("POST /api/admin/emails/retry-failed", emails.RetryFailed)
 	admin("DELETE /api/admin/emails/{id}", emails.Cancel)
 
+	// ---- platform super admin (only on PLATFORM_ADMIN_HOST, see middleware.Store) ----
+	resolver := tenant.NewResolver(db, cfg.PlatformDomain, cfg.DefaultStore)
+	platformTokens := auth.NewPlatformTokenManager(cfg.JWTSecret, cfg.JWTTTL)
+	platformSvc := services.NewPlatformService(repository.NewPlatformRepository(db), platformTokens, mailer, tpl,
+		func(s tenant.Store) string { return StoreURL(cfg, s) }, resolver, loginFailures)
+	platform := handlers.NewPlatformHandler(platformSvc)
+	platformAdmin := func(pattern string, h httpx.HandlerFunc) {
+		mux.Handle(pattern, middleware.AuthenticatePlatform(platformTokens, platformSvc)(httpx.Handle(h)))
+	}
+	sensitive("POST /api/platform/login", platform.Login)
+	platformAdmin("GET /api/platform/me", platform.Me)
+	platformAdmin("GET /api/platform/stores", platform.ListStores)
+	platformAdmin("POST /api/platform/stores", platform.CreateStore)
+	platformAdmin("GET /api/platform/stores/{id}", platform.GetStore)
+	platformAdmin("PUT /api/platform/stores/{id}", platform.UpdateStore)
+	platformAdmin("POST /api/platform/stores/{id}/suspend", platform.Suspend)
+	platformAdmin("POST /api/platform/stores/{id}/activate", platform.Activate)
+	platformAdmin("POST /api/platform/stores/{id}/invite", platform.ResendInvite)
+
 	// Global middleware, outermost first: recover from panics, log the request,
 	// find the client IP, answer CORS (so even a 429 carries CORS headers and
 	// the browser can read it), find the store from the host name (everything
@@ -310,7 +342,7 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	// then route.
 	var h http.Handler = mux
 	h = middleware.RateLimit(general)(h)
-	h = middleware.Store(tenant.NewResolver(db, cfg.PlatformDomain, cfg.DefaultStore), cfg.TrustProxy)(h)
+	h = middleware.Store(resolver, cfg.TrustProxy, cfg.PlatformAdminHost)(h)
 	h = middleware.CORS(cfg.AllowedOrigins)(h)
 	h = middleware.RealIP(cfg.TrustProxy)(h)
 	h = middleware.SecurityHeaders(cfg.Production())(h) // also on 404/429 and panics

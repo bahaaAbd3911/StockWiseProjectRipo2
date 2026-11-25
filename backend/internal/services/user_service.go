@@ -32,13 +32,12 @@ import (
 
 // UserServiceOptions are the account-security settings.
 type UserServiceOptions struct {
-	Mailer    mail.Mailer
-	Templates notify.Templates
+	Mailer mail.Mailer
+	// Branding: each store's name and the pages its emailed links open
+	// (reset password, confirm email) on that store's own address.
+	Branding *notify.Branding
 
-	ResetURL string        // frontend page that receives ?token=... (password reset)
-	ResetTTL time.Duration // how long a reset link works
-
-	VerifyURL string        // frontend page that receives ?token=... (email confirmation)
+	ResetTTL  time.Duration // how long a reset link works
 	VerifyTTL time.Duration // how long a confirmation link works
 
 	LoginFailures *ratelimit.Limiter // per email
@@ -266,12 +265,13 @@ func (s *UserService) sendVerification(ctx context.Context, user models.User) er
 	if err := s.users.CreateVerifyToken(ctx, user.ID, hash, time.Now().Add(s.opts.VerifyTTL)); err != nil {
 		return err
 	}
-	link, err := notify.AddQuery(s.opts.VerifyURL, "token", token)
+	tpl := s.opts.Branding.For(ctx)
+	link, err := notify.AddQuery(tpl.VerifyURL, "token", token)
 	if err != nil {
 		return err
 	}
 	to := notify.Recipient{Email: user.Email, FirstName: user.FirstName}
-	return s.opts.Mailer.Send(ctx, s.opts.Templates.VerifyEmail(to, link, int(s.opts.VerifyTTL.Hours())))
+	return s.opts.Mailer.Send(ctx, tpl.VerifyEmail(to, link, int(s.opts.VerifyTTL.Hours())))
 }
 
 // ---------- password reset ----------
@@ -314,12 +314,13 @@ func (s *UserService) sendResetLink(ctx context.Context, email, ip string) error
 	if err := s.users.CreateResetToken(ctx, user.ID, hash, time.Now().Add(s.opts.ResetTTL), ip); err != nil {
 		return err
 	}
-	link, err := notify.AddQuery(s.opts.ResetURL, "token", token)
+	tpl := s.opts.Branding.For(ctx)
+	link, err := notify.AddQuery(tpl.ResetURL, "token", token)
 	if err != nil {
 		return err
 	}
 	to := notify.Recipient{Email: user.Email, FirstName: user.FirstName}
-	return s.opts.Mailer.Send(ctx, s.opts.Templates.PasswordReset(to, link, int(s.opts.ResetTTL.Minutes())))
+	return s.opts.Mailer.Send(ctx, tpl.PasswordReset(to, link, int(s.opts.ResetTTL.Minutes())))
 }
 
 // ResetPassword finishes a reset with the token from the email link. On
