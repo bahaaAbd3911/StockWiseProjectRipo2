@@ -1,0 +1,116 @@
+.store {
+    overflow: hidden;
+    border: 1px solid var(--p-border);
+    border-radius: 14px;
+    background: var(--p-bg);
+    color: var(--p-text);
+    font-size: 13px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-bottom: 1px solid var(--p-border);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.brand i,
+.brand span {
+    color: var(--p-button);
+}
+
+.search {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--p-border);
+    border-radius: 8px;
+    opacity: 0.75;
+}
+
+.nav {
+    display: flex;
+    gap: 6px;
+    padding: 10px 12px;
+}
+
+.nav span {
+    padding: 5px 10px;
+    border-radius: 999px;
+}
+
+.navActive {
+    background: var(--p-button);
+    color: var(--color-on-primary);
+}
+
+.hero {
+    padding: 18px 14px 20px;
+    border-top: 1px solid var(--p-border);
+}
+
+.hero h4 {
+    margin: 0;
+    font-size: 19px;
+}
+
+.hero h4 span {
+    color: var(--p-accent);
+}
+
+.hero p {
+    margin: 6px 0 12px;
+    color: var(--p-muted);
+}
+
+.button {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--p-button);
+    color: var(--color-on-primary);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.button:hover {
+    background: var(--p-button-hover);
+}
+
+.samples {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 14px;
+    border-top: 1px solid var(--p-border);
+}
+
+.link {
+    color: var(--p-accent);
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.sampleCard {
+    flex: 1 1 140px;
+    padding: 10px;
+    background: var(--p-surface);
+    border: 1px solid var(--p-border);
+    border-radius: 10px;
+}
+
+.sampleCard p {
+    margin: 4px 0 0;
+    color: var(--p-muted);
+    font-size: 12px;
+}

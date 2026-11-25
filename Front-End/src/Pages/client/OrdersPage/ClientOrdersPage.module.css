@@ -1,0 +1,322 @@
+.ClientOrdersPageContainerClass {}
+
+.arbClientOrdersPageContainerClass {
+    direction: rtl;
+}
+
+
+.UserOrdersFilterContainerClass {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 20px 0;
+    gap: 12px;
+}
+
+.filterContainer {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    font: inherit;
+    flex: 1 1 160px;
+    min-height: 50px;
+    padding: 0 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    border-radius: 25px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.5s;
+}
+
+
+.activeFilterContainer {
+    background-color: var(--mainButtonColor);
+    color: var(--color-on-primary);
+}
+
+.ordersListClass {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.OrderContainerClass {
+    background-color: var(--color-surface);
+    height: fit-content;
+    padding: 20px;
+    border-radius: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 25px;
+    text-align: center;
+    flex-wrap: wrap;
+}
+
+@media (max-width:1100px) {
+    /* .ordersListClass {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 15px;
+        height: 300px;
+        overflow-y: scroll;
+    } */
+
+    /* .OrderContainerClass {
+        flex-direction: column;
+        width: fit-content;
+    } */
+
+}
+
+.darkOrderContainerClass {
+    background-color: var(--cardDark);
+    color: var(--color-text);
+}
+
+.darkOrderContainerClass .orderDataClass div:first-child, .darkOrderContainerClass .orderPriceClass div:first-child {
+    color: var(--color-text);
+}
+
+.orderLogoClass {
+    background-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+    color: var(--mainButtonColor);
+    height: 70px;
+    width: 70px;
+    border-radius: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.orderLogoClass i {
+    font-size: 25px;
+}
+
+.orderDataClass {
+    color: var(--secondTextColor);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.orderDataClass div:first-child {
+    font-weight: bold;
+    font-size: 20px;
+    color: var(--color-text);
+}
+
+.orderDataClass div:last-child {
+    /* background-color: #22C55E; */
+    background-color: #22C55E33;
+    color: var(--mainButtonColor);
+    padding: 5px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.orderImagesClass {
+    display: flex;
+    gap: 10px;
+}
+
+.orderImgClass {
+    height: 70px;
+    width: 70px;
+    border-radius: 10px;
+    padding: 3px;
+    border: 1px solid var(--secondTextColor);
+}
+
+.orderImgClass img {
+    height: 100%;
+    width: 100%;
+    border-radius: 10px;
+}
+
+.orderPriceClass {
+    color: var(--secondTextColor);
+}
+
+.orderPriceClass div:first-child {
+    font-weight: bold;
+    font-size: 20px;
+    color: var(--color-text);
+}
+
+.orderViewDetailsBtnClass {
+    display: flex;
+    color: var(--mainButtonColor);
+    gap: 5px;
+    border: 1px solid var(--mainButtonColor);
+    padding: 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.5s;
+}
+
+.orderViewDetailsBtnClass:hover {
+    color: var(--color-on-primary);
+    background-color: var(--mainButtonColor);
+}
+
+.orderImgClass {}
+
+.arborderViewDetailsBtnClass {
+    flex-direction: row-reverse;
+}
+
+.DeliveredOrderContainerClass .orderLogoClass {
+    background-color: #E1F8EB;
+    color: var(--mainButtonColor);
+
+}
+
+.DeliveredOrderContainerClass {
+    /* background-color: #16B85F; */
+}
+
+.ShippingOrderContainerClass {
+    /* color: #087BFA;
+    background-color: #E1F0FF; */
+}
+
+.PendingOrderContainerClass {
+    /* color: #F43F78;
+    background-color: #FDE8F0; */
+}
+
+.DeliveredOrderContainerClass .orderLogoClass {
+    background-color: #E1F8EB;
+    color: var(--mainButtonColor);
+
+}
+
+.ShippingOrderContainerClass .orderLogoClass {
+    color: #087BFA;
+    background-color: #E1F0FF;
+
+}
+
+.PendingOrderContainerClass .orderLogoClass {
+    color: #F43F78;
+    background-color: #FDE8F0;
+
+}
+
+
+.DeliveredOrderContainerClass .orderDataClass div:last-child {
+    background-color: #E1F8EB;
+    color: var(--mainButtonColor);
+
+}
+
+.ShippingOrderContainerClass .orderDataClass div:last-child {
+    color: #087BFA;
+    background-color: #E1F0FF;
+
+}
+
+.PendingOrderContainerClass .orderDataClass div:last-child {
+    color: #F43F78;
+    background-color: #FDE8F0;
+
+}
+/* ---------- Added: cancelled state, details panel, cancel button ---------- */
+.CancelledOrderContainerClass .orderLogoClass,
+.CancelledOrderContainerClass .orderDataClass div:last-child {
+    color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.orderCardClass {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--color-surface);
+}
+
+.orderCardClass > .OrderContainerClass {
+    border-radius: 0;
+}
+
+.orderDetailsClass {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text);
+}
+
+.orderItemRowClass {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.orderItemRowClass img {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.orderItemRowClass > div {
+    flex: 1;
+    min-width: 0;
+}
+
+.orderItemRowClass small {
+    display: block;
+    color: var(--color-text-muted);
+}
+
+.orderMetaClass {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    color: var(--color-text-muted);
+    font-size: 14px;
+}
+
+.cancelOrderBtnClass {
+    align-self: flex-start;
+    padding: 9px 16px;
+    border: 1px solid var(--color-danger);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--color-danger);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cancelOrderBtnClass:hover {
+    background: var(--color-danger);
+    color: var(--color-on-primary);
+}
+
+.orderViewDetailsBtnClass {
+    background: transparent;
+    font: inherit;
+}
+
+@media (max-width: 640px) {
+    .OrderContainerClass {
+        justify-content: flex-start;
+        text-align: start;
+    }
+
+    .orderViewDetailsBtnClass {
+        width: 100%;
+        justify-content: center;
+    }
+}

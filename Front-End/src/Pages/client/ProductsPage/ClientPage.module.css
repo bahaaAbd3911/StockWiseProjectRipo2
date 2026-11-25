@@ -1,0 +1,35 @@
+.ClientPageContainerClass {
+    margin: auto;
+    min-height: 100vh;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+}
+
+.ClientPageContainerDarkModeClass {
+    background-color: var(--color-bg);
+}
+
+/* Filters sidebar + product grid; stacks on small screens. */
+.searchAndResultContainerClass {
+    width: min(1400px, 95%);
+    margin: 20px auto;
+    display: grid;
+    grid-template-columns: 270px minmax(0, 1fr);
+    grid-template-areas: "filter result";
+    align-items: start;
+    gap: 24px;
+}
+
+.arbSearchAndResultContainerClass {
+    direction: rtl;
+}
+
+@media (max-width: 900px) {
+    .searchAndResultContainerClass {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "filter"
+            "result";
+        gap: 12px;
+    }
+}

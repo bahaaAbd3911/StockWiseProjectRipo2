@@ -1,0 +1,55 @@
+.LatestProductsContainerClass {
+    width: min(1300px, 94%);
+    margin: auto;
+    padding: 20px 0;
+}
+
+
+.arbItemsListContainerClass {
+    flex-direction: row-reverse;
+}
+
+.itemsListContainerClass {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 30px;
+    margin-top: 25px;
+}
+
+.filterContainerClass {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    /* padding: 20px 0px; */
+
+}
+
+.filterContainerClass>button {
+    border: 1px solid var(--color-border);
+    padding: 9px 16px;
+    border-radius: 25px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.filterContainerClass>button.activeClass {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+.hoveredClass:hover {
+    background-color: var(--color-primary-soft);
+}
+
+.arbFilterContainerClass {
+    direction: rtl;
+}
+
+.darkFilterContainerClass {
+    color: var(--color-text);
+}

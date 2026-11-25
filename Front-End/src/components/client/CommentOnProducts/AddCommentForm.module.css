@@ -1,0 +1,124 @@
+.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.form {
+    width: min(560px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 22px;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header img,
+.avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: grid;
+    place-items: center;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font-weight: 700;
+}
+
+.header strong {
+    flex: 1;
+}
+
+.close {
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.stars {
+    display: flex;
+    gap: 6px;
+}
+
+.stars button {
+    border: none;
+    background: transparent;
+    font-size: 26px;
+    color: var(--color-border);
+    cursor: pointer;
+}
+
+.stars .on {
+    color: #f5b301;
+}
+
+.form textarea {
+    min-height: 130px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font: inherit;
+    resize: vertical;
+}
+
+.form textarea:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+}
+
+.error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: 14px;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.actions button {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cancel {
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text);
+}
+
+.submit {
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+.submit:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}

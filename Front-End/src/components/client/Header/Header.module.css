@@ -1,0 +1,103 @@
+@keyframes resizing {
+    0% {
+        transform: translate(0px, 0px);
+    }
+
+    50% {
+        transform: translate(0px, -50px);
+    }
+
+    100% {
+        transform: translate(0px, 0px);
+    }
+}
+
+.HeaderContainerClass {
+    width: 80%;
+    margin: 20px auto;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 50px;
+    background-color: rgba(128, 128, 128, 0.09);
+    flex-wrap: wrap;
+    height: fit-content;
+}
+
+
+.arbHeaderContainerClass {
+    flex-direction: row-reverse;
+}
+
+
+
+.logoContainerClass {
+    height: 150px;
+    width: 150px;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, var(--color-primary) 21%, transparent);
+    color: var(--mainButtonColor);
+    position: relative;
+    font-size: 60px;
+}
+
+.logoContainerClass i {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.contentContainerClass {
+    max-width: 500px;
+}
+
+.contentContainerClass h1 {
+    color: var(--mainTextColor);
+}
+
+.contentContainerClass p {
+    color: var(--secondTextColor);
+}
+
+.imageContainerClass {
+    width: min(500px, 100%);
+}
+
+.imageContainerClass img {
+    height: auto;
+    width: 100%;
+    animation: resizing 5s infinite;
+
+}
+
+.darkHeaderContainerClass .contentContainerClass h1 {
+    color: var(--color-text);
+
+}
+
+.darkHeaderContainerClass .contentContainerClass p {
+    color: var(--color-text);
+
+}
+.HeaderContainerClass {
+    width: min(1300px, 94%);
+    box-sizing: border-box;
+    border-radius: 16px;
+    color: var(--color-text);
+}
+
+@media (max-width: 600px) {
+    .HeaderContainerClass {
+        gap: 20px;
+        padding: 16px;
+        text-align: center;
+    }
+
+    .logoContainerClass {
+        height: 96px;
+        width: 96px;
+        font-size: 40px;
+    }
+}

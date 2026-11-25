@@ -1,0 +1,58 @@
+.FavoritePageContainerClass {}
+
+.filterClass {
+    width: 80%;
+    margin: auto;
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 15px;
+    color: var(--color-text);
+    margin-bottom: 20px;
+
+}
+
+.filterClass>div {
+    padding: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+
+.activeClass,
+.morningFilterClass .activeClass {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary) !important;
+    color: var(--color-on-primary) !important;
+}
+
+.hoveredClass:hover,
+.morningFilterClass .hoveredClass:hover {
+    background-color: var(--color-primary-soft);
+    color: var(--color-text);
+}
+
+.morningFilterClass {}
+
+.morningFilterClass>div {
+    color: var(--color-text);
+    border: 1px solid var(--borderColor);
+}
+
+.PurchaseConfirmationClass {
+    margin: auto;
+    background-color: var(--mainButtonColor);
+    height: 50px;
+    width: fit-content;
+    padding: 10px;
+    color: var(--color-on-primary);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    align-items: center;
+    border-radius: 10px;
+    gap: 10px;
+    cursor: pointer;
+}

@@ -1,0 +1,44 @@
+.back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+    color: var(--adm-green);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.hero {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding: 20px;
+    margin-bottom: 22px;
+}
+
+.heroIcon {
+    width: 72px;
+    height: 72px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: 30px;
+    color: var(--adm-green);
+    background: var(--adm-soft);
+}
+
+.heroText {
+    flex: 1;
+    min-width: 200px;
+}
+
+.heroText h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+}
+
+.heroText p {
+    margin: 0 0 8px;
+    color: var(--adm-muted);
+}

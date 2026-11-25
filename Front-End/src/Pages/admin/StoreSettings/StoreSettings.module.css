@@ -1,0 +1,251 @@
+.layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 20px;
+    align-items: start;
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.twoCols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+}
+
+/* ---------- Settings card ---------- */
+.card {
+    padding: 20px;
+}
+
+.cardHead {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.cardHead > i {
+    font-size: 26px;
+    color: var(--adm-green);
+}
+
+.cardHead h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.cardHead p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--adm-muted);
+}
+
+/* ---------- Logo ---------- */
+.logoRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.dropZone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 150px;
+    padding: 14px;
+    border: 2px dashed var(--adm-border);
+    border-radius: 14px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--adm-muted);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.dropZone i {
+    font-size: 26px;
+    color: var(--adm-green);
+}
+
+.dragging,
+.dropZone:hover {
+    border-color: var(--adm-green);
+    background: var(--adm-soft);
+}
+
+.logoPreview {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 150px;
+    border-radius: 14px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.logoPreview > i {
+    font-size: 48px;
+    color: var(--color-primary);
+}
+
+.logoPreview span span {
+    color: var(--color-primary);
+}
+
+.removeLogo {
+    position: absolute;
+    top: 8px;
+    inset-inline-end: 8px;
+}
+
+.counter {
+    display: block;
+    margin-top: 8px;
+    text-align: end;
+    font-size: 13px;
+    color: var(--adm-muted);
+}
+
+/* ---------- Colors ---------- */
+.modeTabs {
+    display: inline-flex;
+    padding: 4px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    background: var(--adm-soft);
+}
+
+.modeTab {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--adm-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.modeTabActive {
+    background: var(--adm-green);
+    color: var(--color-on-primary);
+}
+
+.colorsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+}
+
+.colorField {
+    padding: 14px;
+    border: 1px solid var(--adm-border);
+    border-radius: 12px;
+}
+
+.colorField h4 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.colorField p {
+    margin: 2px 0 10px;
+    font-size: 12px;
+    color: var(--adm-muted);
+}
+
+.colorInput {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--adm-border);
+    border-radius: 10px;
+}
+
+.colorInput input[type="color"] {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+}
+
+.colorInput input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--adm-text);
+    font: inherit;
+    text-transform: uppercase;
+}
+
+.invalid {
+    border-color: var(--color-danger);
+}
+
+/* ---------- Footer ---------- */
+.footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 18px 20px;
+    margin-top: 20px;
+}
+
+.footerText {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.footerText i {
+    font-size: 24px;
+    color: var(--adm-green);
+}
+
+.footerText h4 {
+    margin: 0;
+}
+
+.footerText p {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--adm-muted);
+}
+
+.footerActions {
+    display: flex;
+    gap: 10px;
+}
+
+@media (max-width: 1150px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .logoRow {
+        grid-template-columns: 1fr;
+    }
+}

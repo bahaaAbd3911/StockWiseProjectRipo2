@@ -1,0 +1,94 @@
+.productCell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.productCell img {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--adm-soft);
+}
+
+.productCell div {
+    display: flex;
+    flex-direction: column;
+}
+
+.productCell small,
+.discount {
+    color: var(--adm-muted);
+}
+
+.discount {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+.mediaRow {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.mediaRow > :first-child {
+    flex: 1;
+}
+
+.preview {
+    width: 70px;
+    height: 70px;
+    margin-top: 24px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid var(--adm-border);
+}
+
+.colors {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--adm-border);
+    border-radius: 12px;
+}
+
+.colors legend {
+    padding: 0 6px;
+    font-weight: 600;
+}
+
+.colors > button {
+    align-self: flex-start;
+}
+
+.colorRow {
+    display: grid;
+    grid-template-columns: 44px 110px 1fr 1fr 38px;
+    gap: 8px;
+    align-items: center;
+}
+
+.swatch {
+    width: 44px;
+    height: 40px;
+    padding: 2px;
+    border: 1px solid var(--adm-border);
+    border-radius: 8px;
+    background: var(--adm-surface);
+    cursor: pointer;
+}
+
+.error {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-danger);
+}
+
+@media (max-width: 600px) {
+    .colorRow {
+        grid-template-columns: 44px 1fr 38px;
+    }
+}

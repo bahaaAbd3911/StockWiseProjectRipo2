@@ -1,16 +1,41 @@
+/*
+  Universal color system.
+  --color-* tokens are set at runtime from Store Settings (per light/dark mode)
+  by useStoreTheme; the values below are only the first-paint defaults.
+  Every other variable in the app is an alias of these tokens.
+*/
 :root {
-  --mainTextColor: #111827;
-  --secondTextColor: #647488;
-  --mainButtonColor: #22C55E;
-  --lightBackground: #f5f8fa;
-  --darkBackground: #323a46;
-  --cardLight: #FFFFFF;
-  --cardDark: #1E293B;
-  --borderColor: #E2EBF0;
-  --successColor: #10BBB1;
-  --failedColor: #EF4444;
-  --mainDarkBorder: rgb(88, 88, 88);
-  --mainBoxShadow: #bccce0;
+  --color-text: #17231d;
+  --color-text-muted: #647488;
+  --color-bg: #f5f8fa;
+  --color-surface: #ffffff;
+  --color-border: #e2ebf0;
+  --color-primary: #22c55e;
+  --color-primary-hover: #16a34a;
+  --color-accent: #4ade80;
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+
+  /* Text placed on top of a primary/danger colored button. */
+  --color-on-primary: #ffffff;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  --color-shadow: color-mix(in srgb, var(--color-text) 14%, transparent);
+
+  /* Legacy names used across the client styles. */
+  --mainTextColor: var(--color-text);
+  --secondTextColor: var(--color-text-muted);
+  --mainButtonColor: var(--color-primary);
+  --mainButtonHoverColor: var(--color-primary-hover);
+  --accentColor: var(--color-accent);
+  --lightBackground: var(--color-bg);
+  --darkBackground: var(--color-bg);
+  --cardLight: var(--color-surface);
+  --cardDark: var(--color-surface);
+  --borderColor: var(--color-border);
+  --mainDarkBorder: var(--color-border);
+  --successColor: var(--color-success);
+  --failedColor: var(--color-danger);
+  --mainBoxShadow: var(--color-shadow);
   --mainBlueColor: #2990ff;
 }
 
@@ -18,4 +43,10 @@ body {
   margin: 0;
   padding: 0;
   font-family: "Inter", sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+img {
+  max-width: 100%;
 }

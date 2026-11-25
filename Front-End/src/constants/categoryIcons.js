@@ -1,0 +1,23 @@
+// Font Awesome classes offered in the category icon picker.
+export const CATEGORY_ICONS = [
+  "fa-solid fa-laptop",
+  "fa-solid fa-mobile-screen",
+  "fa-solid fa-headphones",
+  "fa-solid fa-shirt",
+  "fa-solid fa-shoe-prints",
+  "fa-solid fa-clock",
+  "fa-solid fa-gem",
+  "fa-solid fa-couch",
+  "fa-solid fa-spa",
+  "fa-solid fa-dumbbell",
+  "fa-solid fa-book",
+  "fa-solid fa-gamepad",
+  "fa-solid fa-utensils",
+  "fa-solid fa-bag-shopping",
+  "fa-solid fa-baby",
+  "fa-solid fa-car",
+  "fa-solid fa-paw",
+  "fa-solid fa-camera",
+  "fa-solid fa-tv",
+  "fa-solid fa-gift",
+];

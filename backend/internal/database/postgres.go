@@ -20,6 +20,8 @@ type Querier interface {
 }
 
 // Connect opens a connection pool and verifies the database is reachable.
+// databaseURL can point to a local server or a cloud one such as Neon
+// (postgresql://user:pass@host/db?sslmode=require); SSL settings come from the URL.
 func Connect(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
@@ -31,7 +33,9 @@ func Connect(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	db.SetConnMaxLifetime(30 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Cloud databases such as Neon pause when idle and can take several seconds
+	// to wake up, so the first ping gets a generous timeout.
+	pingCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
 		_ = db.Close()

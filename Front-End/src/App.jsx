@@ -1,38 +1,50 @@
 // Import Style
 import "./App.css";
 
-// Import Components
-import ClientPage from "./Pages/Client Page/ClientPage";
-import ManagerPage from "./Pages/MangerPage/MangerPage";
-import Message from "./Components/Message/Message";
-import LoadingPage from "./Pages/LoadingPage/LoadingPage";
-import SignUp from "./Components/Form/SignUp";
-import SignIn from "./Components/Form/SignIn";
-
 // Import Router
 import { Routes, Route, Navigate } from "react-router";
 
 // Import Context
-import { AuthContext } from "../src/context/AuthContext";
+import { AuthContext } from "./context/AuthContext";
 import { useContext, useEffect } from "react";
+
+// Import Layouts & Pages
+import ClientLayout from "./layouts/ClientLayout/ClientLayout";
+import AdminLayout from "./layouts/AdminLayout/AdminLayout";
+import LoadingPage from "./pages/LoadingPage/LoadingPage";
+import Dashboard from "./pages/admin/Dashboard/Dashboard";
+import Products from "./pages/admin/Products/Products";
+import Categories from "./pages/admin/Categories/Categories";
+import CategoryDetails from "./pages/admin/CategoryDetails/CategoryDetails";
+import Orders from "./pages/admin/Orders/Orders";
+import Users from "./pages/admin/Users/Users";
+import UserProfile from "./pages/admin/UserProfile/UserProfile";
+import StoreSettings from "./pages/admin/StoreSettings/StoreSettings";
+
+// Import Components
+import Message from "./components/client/Message/Message";
+import SignUp from "./components/client/Form/SignUp";
+import SignIn from "./components/client/Form/SignIn";
 
 function App() {
   const { message, setMessage } = useContext(AuthContext);
 
   useEffect(() => {
-    if (message.isShow) {
-      setTimeout(() => {
-        setMessage({
-          isShow: false,
-          msgTxt: "",
-          arbMsgTxt: "",
-          msgBGColor: "",
-          time: 0,
-          reminder: false,
-        });
-      }, message.time);
-    }
-  }, [message]);
+    if (!message.isShow) return;
+
+    const timer = setTimeout(() => {
+      setMessage({
+        isShow: false,
+        msgTxt: "",
+        arbMsgTxt: "",
+        msgBGColor: "",
+        time: 0,
+        reminder: false,
+      });
+    }, message.time);
+
+    return () => clearTimeout(timer);
+  }, [message, setMessage]);
 
   return (
     <div className={"appContainer"}>
@@ -46,13 +58,23 @@ function App() {
       )}
       <Routes>
         <Route path="/" element={<LoadingPage />} />
-        <Route path="/client/*" element={<ClientPage />} />
+        <Route path="/client/*" element={<ClientLayout />} />
 
-        <Route path="/manager/*" element={<ManagerPage />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="products" element={<Products />} />
+          <Route path="categories" element={<Categories />} />
+          <Route path="categories/:categoryId" element={<CategoryDetails />} />
+          <Route path="orders" element={<Orders />} />
+          <Route path="users" element={<Users />} />
+          <Route path="users/:userId" element={<UserProfile />} />
+          <Route path="settings" element={<StoreSettings />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Route>
 
-        <Route path="*" element={<Navigate to="/client/home" replace />} />
         <Route path="/signUp" element={<SignUp sign={"Up"} />} />
         <Route path="/signIn" element={<SignIn sign={"In"} />} />
+        <Route path="*" element={<Navigate to="/client/home" replace />} />
       </Routes>
     </div>
   );

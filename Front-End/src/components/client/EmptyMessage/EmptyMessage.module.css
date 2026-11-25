@@ -1,0 +1,68 @@
+.EmptyMessageContainerClass {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 50px;
+    width: 80%;
+    grid-area: result;
+    background-color: #ef44443f;
+    background-color: rgba(128, 128, 128, 0.142);
+    padding: 20px;
+    margin: 20px;
+    margin: 20px auto;
+    flex-wrap: wrap;
+
+
+}
+
+.arbEmptyMessageContainerClass {
+    flex-direction: row-reverse;
+}
+
+.darkEmptyMessageContainerClass {
+    color: var(--color-text);
+}
+
+.EmptyMessageContainerClass>div:last-child {
+    width: min(500px, 100%);
+}
+
+.EmptyMessageImageClass {
+    width: min(420px, 100%);
+    aspect-ratio: 1 / 1;
+}
+
+.EmptyMessageImageClass img {
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+}
+
+.btnClass {
+    height: 25px;
+    width: 200px;
+    background-color: var(--mainButtonColor);
+    color: var(--color-on-primary);
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    border-radius: 15px;
+    cursor: pointer;
+
+}
+.EmptyMessageContainerClass {
+    width: min(1100px, 94%);
+    box-sizing: border-box;
+    border-radius: 16px;
+    color: var(--color-text);
+}
+
+@media (max-width: 600px) {
+    .EmptyMessageContainerClass {
+        gap: 20px;
+        padding: 16px;
+        text-align: center;
+    }
+}

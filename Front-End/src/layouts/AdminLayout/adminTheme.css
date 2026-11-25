@@ -1,0 +1,18 @@
+/* Admin variables are aliases of the universal --color-* tokens (index.css),
+   so the admin panel follows Store Settings in both light and dark mode. */
+.adminTheme {
+    --adm-green: var(--color-primary);
+    --adm-green-dark: var(--color-primary-hover);
+    --adm-bg: var(--color-bg);
+    --adm-surface: var(--color-surface);
+    --adm-text: var(--color-text);
+    --adm-muted: var(--color-text-muted);
+    --adm-border: var(--color-border);
+    --adm-soft: var(--color-primary-soft);
+    color: var(--adm-text);
+}
+
+/* Kept for compatibility; the tokens already switch with the theme. */
+.adminThemeDark {
+    color-scheme: dark;
+}

@@ -23,27 +23,21 @@
 }
 
 @keyframes incresing {
-    0% {
-        width: 460px;
-        height: 290px;
+    0%,
+    100% {
+        transform: scale(1);
     }
 
     50% {
-        width: 420px;
-        height: 270px;
-    }
-
-    100% {
-        width: 460px;
-        height: 290px;
+        transform: scale(0.92);
     }
 }
 
 .shoppingCartImgContainer {}
 
 .shoppingCartImgContainer img {
-    width: 460px;
-    height: 290px;
+    width: min(460px, 90vw);
+    height: auto;
     animation: incresing 3s infinite;
 }
 
@@ -54,6 +48,17 @@
     margin: 0;
     overflow: hidden;
     text-align: center;
+
+    /* Always light: the light --color-* tokens are set inline by LoadingPage.jsx.
+       The aliases are re-declared here so they resolve against those tokens
+       instead of the dark values inherited from :root. */
+    --mainTextColor: var(--color-text);
+    --secondTextColor: var(--color-text-muted);
+    --mainButtonColor: var(--color-primary);
+    --mainButtonHoverColor: var(--color-primary-hover);
+    background: var(--color-bg);
+    color: var(--color-text);
+    color-scheme: light;
 }
 
 .shapeClass {

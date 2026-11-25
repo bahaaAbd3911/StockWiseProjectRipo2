@@ -1,0 +1,90 @@
+.section {
+    margin-bottom: 22px;
+}
+
+.section h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+}
+
+.infoGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.infoItem {
+    padding: 12px 14px;
+    border: 1px solid var(--adm-border);
+    border-radius: 12px;
+}
+
+.infoItem span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--adm-muted);
+}
+
+.infoItem strong {
+    font-size: 15px;
+    word-break: break-word;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.item img {
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--adm-soft);
+}
+
+.itemInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.itemInfo p {
+    margin: 0 0 4px;
+    font-weight: 600;
+}
+
+.itemInfo small {
+    color: var(--adm-muted);
+}
+
+.total {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 14px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.statusControl {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--adm-soft);
+}
+
+.statusControl select {
+    flex: 1 1 180px;
+}
+
+.finalNote {
+    margin: 0;
+    color: var(--adm-muted);
+    font-size: 14px;
+}

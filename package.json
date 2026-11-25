@@ -1,0 +1,11 @@
+{
+  "name": "stockwise-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix Front-End run dev",
+    "api": "cd backend && go run ./cmd/api",
+    "build": "npm --prefix Front-End run build",
+    "lint": "npm --prefix Front-End run lint",
+    "preview": "npm --prefix Front-End run preview"
+  }
+}

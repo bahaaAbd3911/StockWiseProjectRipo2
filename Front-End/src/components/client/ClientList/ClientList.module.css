@@ -1,0 +1,66 @@
+.ClientListContainerClass {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: fit-content;
+    min-width: 220px;
+    padding: 16px;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.itemContaienrClass {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 12px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.itemContaienrClass:hover {
+    background-color: var(--color-primary-soft);
+}
+
+.activeItemClass,
+.activeItemClass:hover {
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+/* Last tab = log out */
+.itemContaienrClass:last-child {
+    color: var(--color-danger);
+}
+
+.darkClientListContainerClass {}
+
+.arbClientListContainerClass {
+    direction: rtl;
+}
+
+/* Horizontal, scrollable tab bar on small screens */
+@media (max-width: 810px) {
+    .ClientListContainerClass {
+        flex-direction: row;
+        min-width: 0;
+        padding: 8px;
+        overflow-x: auto;
+    }
+
+    .itemContaienrClass {
+        width: auto;
+        flex: 0 0 auto;
+    }
+}
