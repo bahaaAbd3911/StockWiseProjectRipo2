@@ -115,6 +115,10 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	debts := handlers.NewDebtHandler(debtSvc)
 	uploads := handlers.NewUploadHandler(productSvc, userSvc, cfg.MaxUploadBytes)
 	emails := handlers.NewEmailHandler(services.NewEmailService(outbox))
+	categories := handlers.NewCategoryHandler(services.NewCategoryService(repository.NewCategoryRepository(db)))
+	settings := handlers.NewSettingsHandler(services.NewSettingsService(repository.NewSettingsRepository(db)))
+	adminUsers := handlers.NewAdminUserHandler(services.NewAdminUserService(
+		repository.NewAdminUserRepository(db), orderRepo, favoriteRepo))
 	coupons := handlers.NewCouponHandler(services.NewCouponService(repository.NewCouponRepository(db), cartRepo))
 	dashboard := handlers.NewDashboardHandler(services.NewDashboardService(
 		repository.NewDashboardRepository(db), cfg.StoreTimezone, cfg.LowStockThreshold))
@@ -178,7 +182,8 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	public("GET /api/products/{id}/images", products.Images)
 	public("GET /api/products/{id}/colors", products.Colors)
 	public("GET /api/products/{id}/reviews", reviews.ListForProduct)
-	public("GET /api/categories", products.Categories)
+	public("GET /api/categories", categories.List)
+	public("GET /api/settings", settings.Get)
 
 	// Catalog management (admin)
 	admin("GET /api/admin/products", products.AdminList)
@@ -266,6 +271,18 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	user("DELETE /api/waiting-list/{id}", waiting.CancelMine)
 	admin("GET /api/admin/waiting-list", waiting.AdminList)
 	admin("PUT /api/admin/waiting-list/{id}/status", waiting.AdminUpdateStatus)
+
+	// Categories, store settings and users (admin)
+	admin("GET /api/admin/categories", categories.AdminList)
+	admin("POST /api/admin/categories", categories.Create)
+	admin("PUT /api/admin/categories/{id}", categories.Update)
+	admin("DELETE /api/admin/categories/{id}", categories.Delete)
+	admin("PUT /api/admin/settings", settings.Save)
+	admin("GET /api/admin/users", adminUsers.List)
+	admin("POST /api/admin/users", adminUsers.Create)
+	admin("GET /api/admin/users/{id}", adminUsers.Get)
+	admin("PUT /api/admin/users/{id}", adminUsers.Update)
+	admin("DELETE /api/admin/users/{id}", adminUsers.Delete)
 
 	// Coupons (admin)
 	admin("GET /api/admin/coupons", coupons.AdminList)

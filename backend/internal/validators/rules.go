@@ -1,6 +1,8 @@
 package validators
 
 import (
+	"strings"
+
 	"ecommerce-backend/internal/models"
 )
 
@@ -107,6 +109,60 @@ func ValidateProduct(in *models.ProductInput) error {
 	c.Percent("discount_value", in.DiscountValue)
 	c.Add(in.Stock >= 0, "stock", "cannot be negative")
 	c.Add(in.Stock <= MaxStock, "stock", "is too large")
+
+	if in.Images != nil {
+		seen := map[string]bool{}
+		clean := []string{}
+		for _, url := range *in.Images {
+			url = strings.TrimSpace(url)
+			if url == "" || seen[url] {
+				continue
+			}
+			seen[url] = true
+			c.Add(IsHTTPURL(url), "images", "every image must be an http(s) URL")
+			clean = append(clean, url)
+		}
+		c.Add(len(clean) <= MaxProductImages, "images", "at most 20 images")
+		*in.Images = clean
+	}
+	if in.Colors != nil {
+		seen := map[string]bool{}
+		for i := range *in.Colors {
+			col := &(*in.Colors)[i]
+			Trim(&col.Name)
+			Trim(&col.NameAr)
+			Trim(&col.HexCode)
+			if col.NameAr == "" {
+				col.NameAr = col.Name
+			}
+			c.Add(col.Name != "" && len([]rune(col.Name)) <= 50 && len([]rune(col.NameAr)) <= 50,
+				"colors", "every color needs a name (at most 50 characters)")
+			c.Add(IsHexColor(col.HexCode), "colors", "every color needs a code like #RRGGBB")
+			key := strings.ToLower(col.Name)
+			c.Add(!seen[key], "colors", "the same color name is used twice")
+			seen[key] = true
+		}
+		c.Add(len(*in.Colors) <= MaxProductColors, "colors", "at most 30 colors")
+	}
+	return c.Err()
+}
+
+// Limits for the image and color lists sent with a product.
+const (
+	MaxProductImages = 20
+	MaxProductColors = 30
+)
+
+// ValidateCategory normalises and checks an admin category body.
+func ValidateCategory(in *models.CategoryInput) error {
+	Trim(&in.Name)
+	Trim(&in.NameAr)
+	Trim(&in.Icon)
+	c := New()
+	c.Required("name", in.Name)
+	c.MaxLen("name", in.Name, 100)
+	c.MaxLen("name_ar", in.NameAr, 100)
+	c.MaxLen("icon", in.Icon, 100)
 	return c.Err()
 }
 

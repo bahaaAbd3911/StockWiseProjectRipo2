@@ -2,7 +2,7 @@
 import {
   ClientPageContainerClass,
   ClientPageContainerDarkModeClass,
-} from "../../pages/client/ProductsPage/ClientPage.module.css";
+} from "../../Pages/client/ProductsPage/ClientPage.module.css";
 
 // Import Hooks
 import { useContext } from "react";
@@ -12,13 +12,14 @@ import { AuthContext } from "../../context/AuthContext";
 import { Routes, Route, Navigate } from "react-router";
 
 // Import Components
-import ClientHomePage from "../../pages/client/HomePage/ClientHomePage";
-import ClientProductsPage from "../../pages/client/ProductsPage/ClientProductsPage";
-import ShoppingCartPage from "../../pages/client/ShoppingCartPage/ShoppingCartPage";
+import ClientHomePage from "../../Pages/client/HomePage/ClientHomePage";
+import ClientProductsPage from "../../Pages/client/ProductsPage/ClientProductsPage";
+import ShoppingCartPage from "../../Pages/client/ShoppingCartPage/ShoppingCartPage";
 import ProductDetailsPage from "../../components/client/ProductDetailsPage/ProductDetailsPage";
-import PurchaseConfirmation from "../../pages/client/PurchaseConfirmation/PurchaseConfirmation";
-import FavoritePage from "../../pages/client/FavoritePage/FavoritePage";
-import ClientProfilePage from "../../pages/client/ProfilePage/ClientProfilePage";
+import PurchaseConfirmation from "../../Pages/client/PurchaseConfirmation/PurchaseConfirmation";
+import FavoritePage from "../../Pages/client/FavoritePage/FavoritePage";
+import ClientProfilePage from "../../Pages/client/ProfilePage/ClientProfilePage";
+import VerifyEmailBanner from "../../components/client/VerifyEmailBanner/VerifyEmailBanner";
 
 function ClientLayout() {
   const { dark } = useContext(AuthContext);
@@ -29,6 +30,7 @@ function ClientLayout() {
         dark ? ClientPageContainerDarkModeClass : ""
       }`}
     >
+      <VerifyEmailBanner />
       <Routes>
         <Route path="home" element={<ClientHomePage />} />
         <Route path="products" element={<ClientProductsPage />} />

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"ecommerce-backend/internal/apperr"
+	"ecommerce-backend/internal/database"
 	"ecommerce-backend/internal/models"
 )
 
@@ -84,7 +85,10 @@ func (r *ProductRepository) List(ctx context.Context, f models.ProductFilter) (m
 	for i := range page.Items {
 		ptrs[i] = &page.Items[i]
 	}
-	return page, attachOffers(ctx, r.db, ptrs...)
+	if err := attachOffers(ctx, r.db, ptrs...); err != nil {
+		return page, err
+	}
+	return page, attachMedia(ctx, r.db, ptrs...)
 }
 
 // Get returns one product. Inactive (soft-deleted) products are only visible
@@ -97,40 +101,65 @@ func (r *ProductRepository) Get(ctx context.Context, id int64, includeInactive b
 	if err != nil {
 		return p, apperr.FromDB(err, "product not found")
 	}
-	return p, attachOffers(ctx, r.db, &p)
+	if err := attachOffers(ctx, r.db, &p); err != nil {
+		return p, err
+	}
+	return p, attachMedia(ctx, r.db, &p)
 }
 
-// Create inserts a product; is_active defaults to true when not given.
-// Empty optional texts are stored as NULL.
+// Create inserts a product (plus its images and colors when given) in one
+// transaction; is_active defaults to true. Empty optional texts become NULL.
+// A category that does not exist yet is created, so the category list always
+// contains every category a product uses.
 func (r *ProductRepository) Create(ctx context.Context, in models.ProductInput) (int64, error) {
 	var id int64
-	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO products (name, name_ar, description, description_ar, category, category_ar,
-		                      price, discount_value, stock, is_active)
-		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''),
-		        $7, $8, $9, COALESCE($10, TRUE))
-		RETURNING id`,
-		in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
-		in.Price, in.DiscountValue, in.Stock, in.IsActive,
-	).Scan(&id)
-	return id, apperr.FromDB(err, "product not found")
+	err := database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if err := ensureCategory(ctx, tx, &in); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO products (name, name_ar, description, description_ar, category, category_ar,
+			                      price, discount_value, stock, is_active)
+			VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''),
+			        $7, $8, $9, COALESCE($10, TRUE))
+			RETURNING id`,
+			in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
+			in.Price, in.DiscountValue, in.Stock, in.IsActive,
+		).Scan(&id); err != nil {
+			return apperr.FromDB(err, "product not found")
+		}
+		return replaceMedia(ctx, tx, id, in.Images, in.Colors)
+	})
+	return id, err
 }
 
-// Update replaces all editable fields; is_active is kept when not given.
+// Update replaces all editable fields (and images / colors when given);
+// is_active is kept when not given.
 func (r *ProductRepository) Update(ctx context.Context, id int64, in models.ProductInput) error {
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE products SET
-			name = $1, name_ar = $2,
-			description = NULLIF($3, ''), description_ar = NULLIF($4, ''),
-			category = NULLIF($5, ''), category_ar = NULLIF($6, ''),
-			price = $7, discount_value = $8, stock = $9,
-			is_active = COALESCE($10, is_active),
-			updated_at = NOW()
-		WHERE id = $11`,
-		in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
-		in.Price, in.DiscountValue, in.Stock, in.IsActive, id,
-	)
-	return expectOneRow(res, err, "product not found")
+	return database.WithTx(ctx, r.db, func(tx *sql.Tx) error {
+		if err := ensureCategory(ctx, tx, &in); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `
+			UPDATE products SET
+				name = $1, name_ar = $2,
+				description = NULLIF($3, ''), description_ar = NULLIF($4, ''),
+				category = NULLIF($5, ''), category_ar = NULLIF($6, ''),
+				price = $7, discount_value = $8, stock = $9,
+				is_active = COALESCE($10, is_active),
+				updated_at = NOW()
+			WHERE id = $11`,
+			in.Name, in.NameAr, in.Description, in.DescriptionAr, in.Category, in.CategoryAr,
+			in.Price, in.DiscountValue, in.Stock, in.IsActive, id,
+		)
+		if err := expectOneRow(res, err, "product not found"); err != nil {
+			return err
+		}
+		if err := lockProduct(ctx, tx, id); err != nil {
+			return err
+		}
+		return replaceMedia(ctx, tx, id, in.Images, in.Colors)
+	})
 }
 
 // Deactivate soft-deletes: the row stays so order history and reviews keep
@@ -139,27 +168,4 @@ func (r *ProductRepository) Deactivate(ctx context.Context, id int64) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE products SET is_active = FALSE, updated_at = NOW() WHERE id = $1 AND is_active`, id)
 	return expectOneRow(res, err, "product not found or already inactive")
-}
-
-// Categories lists the distinct categories of active products.
-func (r *ProductRepository) Categories(ctx context.Context) ([]models.Category, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT category, COALESCE(MAX(category_ar), ''), COUNT(*)
-		FROM products
-		WHERE is_active AND category IS NOT NULL AND category <> ''
-		GROUP BY category
-		ORDER BY category`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []models.Category{}
-	for rows.Next() {
-		var c models.Category
-		if err := rows.Scan(&c.Name, &c.NameAr, &c.ProductCount); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }

@@ -14,6 +14,11 @@ export function useSession() {
     setUser(null);
   }, []);
 
+  const refresh = useCallback(async () => {
+    if (!tokenStore.get()) return;
+    setUser(toUser(await authApi.getProfile()));
+  }, []);
+
   useEffect(() => {
     setUnauthorizedHandler(signOut);
     if (!tokenStore.get()) return;
@@ -45,5 +50,7 @@ export function useSession() {
       setUser(updated);
       return updated;
     },
+    // Reloads the profile, e.g. after the email was confirmed in another tab.
+    refreshProfile: refresh,
   };
 }

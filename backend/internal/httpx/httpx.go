@@ -43,16 +43,22 @@ const MaxBodyBytes = 1 << 20 // 1 MiB
 // DecodeJSON reads the request body into dst and returns a client-friendly
 // error when the body is missing, too large, or not valid JSON.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	return decode(w, r, dst, false)
+	return decode(w, r, dst, false, MaxBodyBytes)
 }
 
 // DecodeOptionalJSON is DecodeJSON for endpoints where the body may be empty.
 func DecodeOptionalJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	return decode(w, r, dst, true)
+	return decode(w, r, dst, true, MaxBodyBytes)
 }
 
-func decode(w http.ResponseWriter, r *http.Request, dst any, optional bool) error {
-	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
+// DecodeLargeJSON is DecodeJSON with a bigger size limit, for the few bodies
+// that carry an embedded image (the store logo).
+func DecodeLargeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	return decode(w, r, dst, false, limit)
+}
+
+func decode(w http.ResponseWriter, r *http.Request, dst any, optional bool, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		var maxErr *http.MaxBytesError
 		var typeErr *json.UnmarshalTypeError

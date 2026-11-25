@@ -53,11 +53,7 @@ func (s *ProductService) Get(ctx context.Context, id int64, includeInactive bool
 	if err != nil {
 		return models.ProductDetail{}, err
 	}
-	colors, err := s.catalog.ListColors(ctx, id)
-	if err != nil {
-		return models.ProductDetail{}, err
-	}
-	return models.ProductDetail{Product: p, Images: images, Colors: colors}, nil
+	return models.ProductDetail{Product: p, Images: images}, nil
 }
 
 func (s *ProductService) Create(ctx context.Context, in models.ProductInput) (models.ProductDetail, error) {
@@ -87,10 +83,6 @@ func (s *ProductService) Update(ctx context.Context, id int64, in models.Product
 
 func (s *ProductService) Deactivate(ctx context.Context, id int64) error {
 	return s.products.Deactivate(ctx, id)
-}
-
-func (s *ProductService) Categories(ctx context.Context) ([]models.Category, error) {
-	return s.products.Categories(ctx)
 }
 
 // ---------- images & colors ----------

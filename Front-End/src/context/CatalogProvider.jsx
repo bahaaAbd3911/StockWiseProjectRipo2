@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 
+import { AuthContext } from "./AuthContext";
 import { CatalogContext } from "./CatalogContext";
 import { fetchCategories, fetchProducts } from "../api/catalog";
 
-const loadCatalog = () => Promise.all([fetchProducts(), fetchCategories()]);
+// Admins also get switched-off categories, so they can switch them back on.
+const loadCatalog = (isAdmin) => Promise.all([fetchProducts(), fetchCategories(isAdmin)]);
 
 export function CatalogProvider({ children }) {
+  const { isAdmin } = useContext(AuthContext);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ready | error
@@ -23,11 +26,11 @@ export function CatalogProvider({ children }) {
   }, []);
 
   // Re-fetch after admin changes, orders (stock), reviews (ratings)…
-  const reload = useCallback(() => loadCatalog().then(apply, fail), [apply, fail]);
+  const reload = useCallback(() => loadCatalog(isAdmin).then(apply, fail), [isAdmin, apply, fail]);
 
   useEffect(() => {
-    loadCatalog().then(apply, fail);
-  }, [apply, fail]);
+    loadCatalog(isAdmin).then(apply, fail);
+  }, [isAdmin, apply, fail]);
 
   return (
     <CatalogContext.Provider

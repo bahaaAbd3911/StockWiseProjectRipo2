@@ -106,6 +106,9 @@ type OrderItem struct {
 	Subtotal        decimal.Decimal `json:"subtotal"`
 	OfferID         *int64          `json:"offer_id"`   // offer that set unit_price, if any
 	OfferName       *string         `json:"offer_name"` // snapshot of the offer name
+	// ProductImageURL is the product's current main image (not a snapshot;
+	// null if the product or its images were removed).
+	ProductImageURL *string `json:"product_image_url"`
 }
 
 type OrderCustomer struct {

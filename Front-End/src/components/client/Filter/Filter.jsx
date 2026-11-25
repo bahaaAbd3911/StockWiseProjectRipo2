@@ -5,7 +5,7 @@ import {
   activeClass,
   hoveredClass,
   morningFilterClass,
-} from "../../../pages/client/FavoritePage/FavoritePage.module.css";
+} from "../../../Pages/client/FavoritePage/FavoritePage.module.css";
 
 // Import Hooks
 import { useState, useContext } from "react";

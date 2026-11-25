@@ -1,7 +1,7 @@
 import { mainFormContainerClass } from "./Sign.module.css";
 
 import { useState, useContext } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate } from "react-router";
 
 import { AuthContext } from "../../../context/AuthContext";
 import { SignInValidation } from "../../../utils/helpers";
@@ -13,7 +13,7 @@ import UserSettings from "../../common/UserSettings/UserSettings";
 import Form from "./Form";
 
 function SignIn() {
-  const { signIn, isSign, isAdmin } = useContext(AuthContext);
+  const { signIn, isSign, isAdmin, lang } = useContext(AuthContext);
   const navigate = useNavigate();
   const toast = useToast();
   const [fields, setFields] = useState(signInFields);
@@ -49,6 +49,9 @@ function SignIn() {
         validationFunction={SignInValidation}
         onSubmit={submit}
       />
+      <Link to="/reset-password" style={{ marginTop: 12, color: "var(--color-primary)" }}>
+        {lang === "arb" ? "نسيت كلمة المرور؟" : "Forgot your password?"}
+      </Link>
     </div>
   );
 }

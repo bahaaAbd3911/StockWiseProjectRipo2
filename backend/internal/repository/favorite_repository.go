@@ -68,7 +68,10 @@ func (r *FavoriteRepository) List(ctx context.Context, userID int64) ([]models.F
 	for i := range out {
 		ptrs[i] = &out[i].Product
 	}
-	return out, attachOffers(ctx, r.db, ptrs...)
+	if err := attachOffers(ctx, r.db, ptrs...); err != nil {
+		return out, err
+	}
+	return out, attachMedia(ctx, r.db, ptrs...)
 }
 
 func (r *FavoriteRepository) Remove(ctx context.Context, userID, productID int64) error {

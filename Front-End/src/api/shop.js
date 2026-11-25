@@ -1,6 +1,8 @@
 import { api } from "./client";
 import { toCartItem, toFavoriteProduct, toOrder } from "./mappers";
 
+// The cart response also has bundles, a coupon, the discount and the total;
+// the cart page shows the product lines.
 export const fetchCart = async () => ((await api("/api/cart")).items ?? []).map(toCartItem);
 export const addCartItem = (productId, quantity, color) =>
   api("/api/cart/items", {
@@ -11,7 +13,7 @@ export const updateCartItem = (itemId, quantity) =>
   api(`/api/cart/items/${itemId}`, { method: "PUT", body: { quantity } });
 export const removeCartItem = (itemId) => api(`/api/cart/items/${itemId}`, { method: "DELETE" });
 
-export const fetchFavorites = async () => (await api("/api/favorites")).map(toFavoriteProduct);
+export const fetchFavorites = async () => ((await api("/api/favorites")) ?? []).map(toFavoriteProduct);
 export const addFavorite = (productId) =>
   api("/api/favorites", { method: "POST", body: { product_id: productId } });
 export const removeFavorite = (productId) => api(`/api/favorites/${productId}`, { method: "DELETE" });

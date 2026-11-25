@@ -14,7 +14,9 @@ type EmailHandler struct {
 	emails *services.EmailService
 }
 
-func NewEmailHandler(emails *services.EmailService) *EmailHandler { return &EmailHandler{emails: emails} }
+func NewEmailHandler(emails *services.EmailService) *EmailHandler {
+	return &EmailHandler{emails: emails}
+}
 
 // List: GET /api/admin/emails?status=pending|failed|sent&kind=&to=&limit=&offset=
 func (h *EmailHandler) List(w http.ResponseWriter, r *http.Request) error {

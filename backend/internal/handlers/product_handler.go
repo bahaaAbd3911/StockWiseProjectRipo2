@@ -91,15 +91,6 @@ func (h *ProductHandler) get(w http.ResponseWriter, r *http.Request, includeInac
 	return httpx.JSON(w, http.StatusOK, p)
 }
 
-// Categories: GET /api/categories
-func (h *ProductHandler) Categories(w http.ResponseWriter, r *http.Request) error {
-	cats, err := h.products.Categories(r.Context())
-	if err != nil {
-		return err
-	}
-	return httpx.JSON(w, http.StatusOK, cats)
-}
-
 // Create: POST /api/products (admin)
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) error {
 	var in models.ProductInput

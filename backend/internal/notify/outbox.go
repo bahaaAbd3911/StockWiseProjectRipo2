@@ -53,7 +53,7 @@ const (
 	maxAttempts = 10 // about 2 days of retries with the backoff below
 	// maxAttemptsSQL is maxAttempts for SQL text (admin.go); a test keeps them equal.
 	maxAttemptsSQL = "10"
-	sendTimeout = 30 * time.Second
+	sendTimeout    = 30 * time.Second
 )
 
 // WorkerOptions configure the background delivery.

@@ -11,15 +11,17 @@ import { useContext, useEffect } from "react";
 // Import Layouts & Pages
 import ClientLayout from "./layouts/ClientLayout/ClientLayout";
 import AdminLayout from "./layouts/AdminLayout/AdminLayout";
-import LoadingPage from "./pages/LoadingPage/LoadingPage";
-import Dashboard from "./pages/admin/Dashboard/Dashboard";
-import Products from "./pages/admin/Products/Products";
-import Categories from "./pages/admin/Categories/Categories";
-import CategoryDetails from "./pages/admin/CategoryDetails/CategoryDetails";
-import Orders from "./pages/admin/Orders/Orders";
-import Users from "./pages/admin/Users/Users";
-import UserProfile from "./pages/admin/UserProfile/UserProfile";
-import StoreSettings from "./pages/admin/StoreSettings/StoreSettings";
+import LoadingPage from "./Pages/LoadingPage/LoadingPage";
+import Dashboard from "./Pages/admin/Dashboard/Dashboard";
+import Products from "./Pages/admin/Products/Products";
+import Categories from "./Pages/admin/Categories/Categories";
+import CategoryDetails from "./Pages/admin/CategoryDetails/CategoryDetails";
+import Orders from "./Pages/admin/Orders/Orders";
+import Users from "./Pages/admin/Users/Users";
+import UserProfile from "./Pages/admin/UserProfile/UserProfile";
+import StoreSettings from "./Pages/admin/StoreSettings/StoreSettings";
+import VerifyEmail from "./Pages/account/VerifyEmail";
+import ResetPassword from "./Pages/account/ResetPassword";
 
 // Import Components
 import Message from "./components/client/Message/Message";
@@ -74,6 +76,9 @@ function App() {
 
         <Route path="/signUp" element={<SignUp sign={"Up"} />} />
         <Route path="/signIn" element={<SignIn sign={"In"} />} />
+        {/* Opened from emails (paths match the backend's EMAIL_VERIFY_URL / PASSWORD_RESET_URL) */}
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/client/home" replace />} />
       </Routes>
     </div>

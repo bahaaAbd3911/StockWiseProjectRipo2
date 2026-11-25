@@ -342,11 +342,13 @@ func loadItems(ctx context.Context, q database.Querier, orders []models.Order) e
 		index[o.ID] = i
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, order_id, product_id, product_name, product_name_ar, quantity,
-		       unit_price, selected_color, selected_color_ar, subtotal, offer_id, offer_name
-		FROM order_items
-		WHERE order_id = ANY($1)
-		ORDER BY order_id, id`, ids)
+		SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.product_name_ar, oi.quantity,
+		       oi.unit_price, oi.selected_color, oi.selected_color_ar, oi.subtotal, oi.offer_id, oi.offer_name,
+		       (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = oi.product_id
+		         ORDER BY pi.is_primary DESC, pi.display_order, pi.id LIMIT 1)
+		FROM order_items oi
+		WHERE oi.order_id = ANY($1)
+		ORDER BY oi.order_id, oi.id`, ids)
 	if err != nil {
 		return err
 	}
@@ -355,7 +357,7 @@ func loadItems(ctx context.Context, q database.Querier, orders []models.Order) e
 		var it models.OrderItem
 		if err := rows.Scan(&it.ID, &it.OrderID, &it.ProductID, &it.ProductName, &it.ProductNameAr,
 			&it.Quantity, &it.UnitPrice, &it.SelectedColor, &it.SelectedColorAr, &it.Subtotal,
-			&it.OfferID, &it.OfferName); err != nil {
+			&it.OfferID, &it.OfferName, &it.ProductImageURL); err != nil {
 			return err
 		}
 		i := index[it.OrderID]

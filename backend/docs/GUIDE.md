@@ -609,6 +609,7 @@ notify.Worker every EMAIL_POLL_INTERVAL (5 s):
 | `000002_offers_bundles_debts` | offers, offer_products, bundles, bundle_items, cart_bundles, order_bundles, order_bundle_items, users.credit_limit, customer_debt_transactions, `pay_later` payment method, `deferred` payment status |
 | `000003_auth_security` | users.token_version, password_reset_tokens |
 | `000004_email_verification_notifications` | users.email_verified_at (existing users set to verified), users.debt_reminded_at, email_verification_tokens, email_outbox |
+| `000006_categories_settings` | categories (name, Arabic name, icon, on/off; seeded from the products' categories), store_settings (one JSON row: store name, logo, theme colors) |
 | `000005_coupons_dashboard` | coupons, coupon_products, coupon_redemptions, carts.coupon_id, orders.subtotal_amount / discount_amount / coupon_id / coupon_code (+ check total = subtotal - discount), indexes on orders.created_at and status |
 
 ```powershell
@@ -777,6 +778,7 @@ data is never touched. Emails go to an in-memory mailer.
 | `TestDebtNotificationsAndReminders` | payment and adjustment emails, reminder timing, never twice, none when paid |
 | `TestBackInStockEmails` | restock emails waiting customers once, not cancelled ones |
 | `TestImageUploads` | upload, serve, refusals (fake, too big, missing, not admin), deletes remove files, profile pictures |
+| `TestProductWithImagesAndColors`, `TestCategories`, `TestStoreSettings`, `TestAdminUsers` | the endpoints and shapes the React frontend uses: media saved with the product, category rename and hide, settings validation (no script logos, bad colors), user management safety rules |
 | `TestCoupons` | validation, minimum order, case-insensitive codes, stacking on offers, once per customer, cancel gives the use back, category scope, usage limit race between two carts, disabled codes block checkout, order keeps the code after delete |
 | `TestAdminDashboard` | local days, today's figures move with a new order, status counts, low stock, admin only, `days` limits |
 | `TestAdminEmailQueue` | summary, filters, detail, retry one / all failed, cancel, 409 on sent emails, retention clean-up, admin only |
@@ -812,10 +814,11 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 | GET | `/api/products` | P | `?category= &search= &sort= &in_stock= &on_offer= &limit= &offset=` |
 | GET | `/api/products/{id}` | P | with images and colors |
 | GET | `/api/products/{id}/images`, `/colors`, `/reviews` | P | reviews: `?sort=newest\|helpful\|rating_high\|rating_low` |
-| GET | `/api/categories` | P | with counts |
+| GET | `/api/categories` | P | active categories: `id, name, name_ar, icon, is_active, product_count` |
+| GET | `/api/settings` | P | store name, logo, theme colors (camelCase keys, owned by the frontend) |
 | GET | `/uploads/{name}` | P | uploaded images (local storage) |
 | GET | `/api/admin/products`, `/api/admin/products/{id}` | A | includes inactive |
-| POST / PUT / DELETE | `/api/products`, `/api/products/{id}` | A | PUT with stock > 0 emails the waiting list |
+| POST / PUT / DELETE | `/api/products`, `/api/products/{id}` | A | body may include `images: [url, ...]` (first = main) and `colors: [{name, name_ar, hex_code}]` to replace them in the same save; PUT with stock > 0 emails the waiting list |
 | POST | `/api/products/{id}/images` | A | by URL: `image_url, is_primary, display_order` |
 | POST | `/api/admin/products/{id}/images/upload` | A | multipart: `image` file, `is_primary?`, `display_order?` |
 | PUT | `/api/product-images/{id}/primary` | A | |
@@ -873,6 +876,18 @@ logged in · **V** logged in with a confirmed email · **A** admin.
 | PUT | `/api/admin/customers/{id}/credit-limit` | A |
 | POST | `/api/admin/customers/{id}/debt/payments` | A |
 | POST | `/api/admin/customers/{id}/debt/adjustments` | A |
+
+**Categories, store settings and users (admin)**
+
+| Method | Path | Notes |
+|---|---|---|
+| GET / POST | `/api/admin/categories` | GET includes switched-off categories; POST `{name, name_ar, icon, is_active?}` |
+| PUT / DELETE | `/api/admin/categories/{id}` | a rename is copied to the category's products; DELETE removes it and hides its products |
+| PUT | `/api/admin/settings` | `{storeName, logo, colors: {light: {...}, dark: {...}}}`; logo = data URL (up to 1 MB) or http(s) URL |
+| GET / POST | `/api/admin/users` | GET `?search= &role=` with `is_active, orders_count, total_spent`; POST `{first_name, last_name, email, phone?, password, role?, is_active?}` (email counts as confirmed) |
+| GET | `/api/admin/users/{id}` | `{user, orders, favorites}` |
+| PUT | `/api/admin/users/{id}` | same body; empty password keeps it; a new password, role change or deactivation logs the user out |
+| DELETE | `/api/admin/users/{id}` | deletes a user with no orders, otherwise deactivates; an admin cannot remove themselves or the last admin |
 
 **Coupons and dashboard (admin)**
 

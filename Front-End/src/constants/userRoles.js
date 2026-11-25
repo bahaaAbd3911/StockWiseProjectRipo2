@@ -1,6 +1,6 @@
+// Must match the roles the backend accepts (customer, admin).
 export const USER_ROLES = {
   admin: { en: "Admin", ar: "مدير", tone: "purple" },
-  staff: { en: "Staff", ar: "موظف", tone: "green" },
   customer: { en: "Customer", ar: "عميل", tone: "blue" },
 };
 
