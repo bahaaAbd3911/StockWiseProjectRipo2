@@ -5,6 +5,8 @@ export const PROFILE_TABS = [
   { icon: "fa-solid fa-box", label: "My Orders", arbLabel: "طلباتي" },
   { icon: "fa-solid fa-cart-shopping", label: "My Cart", arbLabel: "سلة التسوق" },
   { icon: "fa-solid fa-heart", label: "My Favorites", arbLabel: "قائمتي المفضلة" },
+  { icon: "fa-solid fa-wallet", label: "My Balance", arbLabel: "رصيدي" },
+  { icon: "fa-solid fa-bell", label: "Waiting List", arbLabel: "قائمة الانتظار" },
   { icon: "fa-solid fa-right-from-bracket", label: "Log Out", arbLabel: "تسجيل الخروج" },
 ].map((tab, index) => ({ ...tab, index, isActive: index === 0 }));
 

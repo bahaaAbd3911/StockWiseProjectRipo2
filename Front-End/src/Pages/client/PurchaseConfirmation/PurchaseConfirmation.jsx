@@ -37,7 +37,7 @@ function usePrefillContact() {
 
 function PurchaseConfirmation() {
   const { lang, orderStages, isSign } = useContext(AuthContext);
-  const { cart } = useShop();
+  const { cart, cartInfo } = useShop();
   const [selectedStage, setSelectedStage] = useState(orderStages[0]);
   usePrefillContact();
 
@@ -45,7 +45,7 @@ function PurchaseConfirmation() {
 
   let body;
   if (!isSign) body = <SignInRequired text={null} />;
-  else if (cart.length === 0)
+  else if (cart.length === 0 && cartInfo.bundles.length === 0)
     body = (
       <EmptyMessage
         img={cartImg}

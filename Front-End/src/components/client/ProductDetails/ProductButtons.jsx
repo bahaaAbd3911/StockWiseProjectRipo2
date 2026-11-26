@@ -1,12 +1,15 @@
 import { useState } from "react";
 
 import { useShop } from "../../../hooks/useShop";
+import { useToast } from "../../../hooks/useToast";
+import { joinWaitingList } from "../../../api/sales";
 import { useLang } from "../../../hooks/useLang";
 import { btnContainerClass, favoriteOnClass } from "./ProductDetails.module.css";
 
 function ProductButtons({ productData, quantity, color }) {
   const { tr } = useLang();
-  const { addToCart, toggleFavorite, isFavorite } = useShop();
+  const { addToCart, toggleFavorite, isFavorite, requireSignIn } = useShop();
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
   const favorite = isFavorite(productData.id);
 
@@ -16,12 +19,32 @@ function ProductButtons({ productData, quantity, color }) {
     setAdding(false);
   };
 
+  // Out of stock: ask to be emailed when it comes back.
+  const notify = async () => {
+    if (!requireSignIn()) return;
+    setAdding(true);
+    try {
+      await joinWaitingList(productData.id, quantity, color);
+      toast.success("We will email you when it is back in stock", "سنرسل لك بريداً عند توفره");
+    } catch (err) {
+      toast.error(err.message, err.message);
+    }
+    setAdding(false);
+  };
+
   return (
     <div className={btnContainerClass}>
-      <button type="button" onClick={add} disabled={productData.outOfStock || adding}>
-        <i className={`fa-solid ${adding ? "fa-spinner fa-spin" : "fa-cart-shopping"}`}></i>
-        {productData.outOfStock ? tr("Out of stock", "نفد من المخزون") : tr("Add To Cart", "أضف الى سلة التسوق")}
-      </button>
+      {productData.outOfStock ? (
+        <button type="button" onClick={notify} disabled={adding}>
+          <i className={`fa-solid ${adding ? "fa-spinner fa-spin" : "fa-bell"}`}></i>
+          {tr("Out of stock · Notify me", "نفد من المخزون · أعلمني")}
+        </button>
+      ) : (
+        <button type="button" onClick={add} disabled={adding}>
+          <i className={`fa-solid ${adding ? "fa-spinner fa-spin" : "fa-cart-shopping"}`}></i>
+          {tr("Add To Cart", "أضف الى سلة التسوق")}
+        </button>
+      )}
       <button
         type="button"
         className={favorite ? favoriteOnClass : ""}

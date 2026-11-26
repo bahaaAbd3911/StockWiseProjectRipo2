@@ -6,6 +6,11 @@ import {
   faUsers,
   faGear,
   faGlobe,
+  faTicket,
+  faTags,
+  faBoxesStacked,
+  faWallet,
+  faBell,
 } from "@fortawesome/free-solid-svg-icons";
 
 export const translations = {
@@ -15,6 +20,11 @@ export const translations = {
     categories: "Categories",
     orders: "Orders",
     users: "Users",
+    coupons: "Coupons",
+    offers: "Offers",
+    bundles: "Bundles",
+    debts: "Customer Debts",
+    waiting: "Waiting List",
     website: "WEBSITE",
     settings: "Store Settings",
     domains: "Domains",
@@ -26,6 +36,11 @@ export const translations = {
     categories: "التصنيفات",
     orders: "الطلبات",
     users: "المستخدمون",
+    coupons: "القسائم",
+    offers: "العروض",
+    bundles: "الباقات",
+    debts: "ديون العملاء",
+    waiting: "قائمة الانتظار",
     website: "إعدادات الموقع",
     settings: "إعدادات المتجر",
     domains: "النطاقات",
@@ -40,6 +55,11 @@ export const mainPages = [
   { key: "categories", path: "/admin/categories", icon: faFolder },
   { key: "orders", path: "/admin/orders", icon: faCartShopping },
   { key: "users", path: "/admin/users", icon: faUsers },
+  { key: "coupons", path: "/admin/coupons", icon: faTicket },
+  { key: "offers", path: "/admin/offers", icon: faTags },
+  { key: "bundles", path: "/admin/bundles", icon: faBoxesStacked },
+  { key: "debts", path: "/admin/debts", icon: faWallet },
+  { key: "waiting", path: "/admin/waiting-list", icon: faBell },
 ];
 
 export const websitePages = [

@@ -6,6 +6,7 @@ import { useShop } from "../../../hooks/useShop";
 import { useLang } from "../../../hooks/useLang";
 import FavoriteButton from "./FavoriteButton";
 import PriceTag from "./PriceTag";
+import { finalPrice } from "../../../utils/format";
 import styles from "./Item.module.css";
 
 // Product card used on every product grid in the store.
@@ -16,6 +17,8 @@ function Item({ product }) {
   const [adding, setAdding] = useState(false);
 
   const inCart = Boolean(cartItemFor(product.id));
+  // The saving shown on the badge: the product's own discount or a live offer.
+  const percentOff = product.price > 0 ? Math.round((1 - finalPrice(product) / product.price) * 100) : 0;
   const openDetails = () => navigate(`/client/ProductDetails/${product.id}`);
 
   const add = async () => {
@@ -32,7 +35,7 @@ function Item({ product }) {
     >
       <div className={styles.itemImgClass} onClick={openDetails}>
         <img src={product.image} alt={isAr ? product.nameAr : product.name} loading="lazy" />
-        {product.discountValue > 0 && <span className={styles.badgeClass}>-{product.discountValue}%</span>}
+        {percentOff > 0 && <span className={styles.badgeClass}>-{percentOff}%</span>}
         <FavoriteButton product={product} />
       </div>
 

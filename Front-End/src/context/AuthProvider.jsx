@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { AuthContext } from "./AuthContext";
 import { useSession } from "../hooks/useSession";
@@ -24,9 +24,12 @@ export const AuthProvider = ({ children }) => {
   const [orderStages, setOrderStages] = useState(ORDER_STAGES);
   const [orderFormFields, setorderFormFields] = useState(emptyOrderForm);
 
-  // Opens a tab of the client profile page (0 profile, 1 orders, 2 cart, 3 favorites).
-  const openProfileTab = (index) =>
-    setUserList((prev) => prev.map((tab) => ({ ...tab, isActive: tab.index === index })));
+  // Opens a tab of the client profile page (0 profile, 1 orders, 2 cart,
+  // 3 favorites, 4 balance, 5 waiting list). Stable, so effects can depend on it.
+  const openProfileTab = useCallback(
+    (index) => setUserList((prev) => prev.map((tab) => ({ ...tab, isActive: tab.index === index }))),
+    [],
+  );
 
   return (
     <AuthContext.Provider

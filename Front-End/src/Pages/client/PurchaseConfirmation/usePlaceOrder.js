@@ -11,6 +11,7 @@ export const PAYMENT_KEYS = {
   "Cash On Delivery": "cash_on_delivery",
   "Online Payment": "credit_card",
   PayPal: "paypal",
+  "Pay Later": "pay_later",
 };
 
 // Field indexes: 0 name, 1 phone, 2 email, 3 city, 4 area, 5 address, 6 delivery, 7 payment.

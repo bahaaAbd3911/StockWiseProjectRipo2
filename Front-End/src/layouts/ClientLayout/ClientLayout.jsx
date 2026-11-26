@@ -19,6 +19,8 @@ import ProductDetailsPage from "../../components/client/ProductDetailsPage/Produ
 import PurchaseConfirmation from "../../Pages/client/PurchaseConfirmation/PurchaseConfirmation";
 import FavoritePage from "../../Pages/client/FavoritePage/FavoritePage";
 import ClientProfilePage from "../../Pages/client/ProfilePage/ClientProfilePage";
+import OffersPage from "../../Pages/client/Sales/OffersPage";
+import BundlesPage from "../../Pages/client/Sales/BundlesPage";
 import VerifyEmailBanner from "../../components/client/VerifyEmailBanner/VerifyEmailBanner";
 
 function ClientLayout() {
@@ -45,6 +47,8 @@ function ClientLayout() {
           element={<PurchaseConfirmation />}
         />
         <Route path="profile" element={<ClientProfilePage />} />
+        <Route path="offers" element={<OffersPage />} />
+        <Route path="bundles" element={<BundlesPage />} />
 
         <Route path="*" element={<Navigate to="/client/home" replace />} />
       </Routes>

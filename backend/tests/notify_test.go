@@ -142,9 +142,15 @@ func TestOrderNotifications(t *testing.T) {
 	must(t, 200, "POST", "/api/orders/"+second+"/cancel", kim, nil)
 	waitForEmails(t, "kim@example.com", "Order #"+second+": cancelled", 1)
 
-	// Every queued email is marked as sent.
+	// Every queued email is marked as sent. The worker hands the email to the
+	// mailer first and records sent_at right after, so give it a moment.
 	var unsent int
-	testDB.QueryRow(`SELECT COUNT(*) FROM email_outbox WHERE to_address = 'kim@example.com' AND sent_at IS NULL`).Scan(&unsent)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		testDB.QueryRow(`SELECT COUNT(*) FROM email_outbox WHERE to_address = 'kim@example.com' AND sent_at IS NULL`).Scan(&unsent)
+		if unsent == 0 {
+			break
+		}
+	}
 	if unsent != 0 {
 		t.Fatalf("%d email(s) still unsent", unsent)
 	}

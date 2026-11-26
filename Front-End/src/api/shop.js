@@ -1,9 +1,21 @@
 import { api } from "./client";
-import { toCartItem, toFavoriteProduct, toOrder } from "./mappers";
+import { toCartBundle, toCartItem, toFavoriteProduct, toOrder } from "./mappers";
 
-// The cart response also has bundles, a coupon, the discount and the total;
-// the cart page shows the product lines.
-export const fetchCart = async () => ((await api("/api/cart")).items ?? []).map(toCartItem);
+// The cart: product lines, bundle lines, and what the backend worked out -
+// subtotal, the coupon (with a "problem" when it stopped working), discount, total.
+export const fetchCart = async () => {
+  const c = await api("/api/cart");
+  return {
+    items: (c.items ?? []).map(toCartItem),
+    bundles: (c.bundles ?? []).map(toCartBundle),
+    subtotal: Number(c.subtotal) || 0,
+    discount: Number(c.discount) || 0,
+    total: Number(c.total) || 0,
+    coupon: c.coupon
+      ? { code: c.coupon.code, discount: Number(c.coupon.discount_amount) || 0, problem: c.coupon.problem ?? "" }
+      : null,
+  };
+};
 export const addCartItem = (productId, quantity, color) =>
   api("/api/cart/items", {
     method: "POST",

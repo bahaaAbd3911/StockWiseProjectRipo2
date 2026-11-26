@@ -408,12 +408,12 @@ func checkProduction(cfg Config) (problems, warnings []string) {
 	lower := strings.ToLower(cfg.JWTSecret)
 	for _, p := range placeholderSecrets {
 		if strings.Contains(lower, p) {
-			bad("JWT_SECRET is still the example value; generate a random one (see docs/production.md)")
+			bad("JWT_SECRET is still the example value; generate a random one (see docs/18-configuration.md)")
 			break
 		}
 	}
 	if distinct(cfg.JWTSecret) < 12 {
-		bad("JWT_SECRET is too predictable; generate a random one (see docs/production.md)")
+		bad("JWT_SECRET is too predictable; generate a random one (see docs/18-configuration.md)")
 	}
 	if cfg.JWTTTL > 7*24*time.Hour {
 		warn("JWT_TTL is %s; a stolen token stays valid that long (24h is usual)", cfg.JWTTTL)
@@ -483,7 +483,7 @@ func checkProduction(cfg Config) (problems, warnings []string) {
 			warn("DATABASE_URL has sslmode=disable for a remote server: passwords and data travel unencrypted; use sslmode=require")
 		}
 		if u.User != nil && u.User.Username() == "postgres" {
-			warn("DATABASE_URL uses the postgres superuser; create a dedicated user for the API (see docs/production.md)")
+			warn("DATABASE_URL uses the postgres superuser; create a dedicated user for the API (see docs/18-configuration.md)")
 		}
 	}
 

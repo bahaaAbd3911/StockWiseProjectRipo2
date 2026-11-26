@@ -4,6 +4,7 @@ import { ShopContext } from "./ShopContext";
 import { AuthContext } from "./AuthContext";
 import { CatalogContext } from "./CatalogContext";
 import * as shopApi from "../api/shop";
+import * as salesApi from "../api/sales";
 import { useShopData } from "../hooks/useShopData";
 import { useToast } from "../hooks/useToast";
 
@@ -68,6 +69,50 @@ export function ShopProvider({ children }) {
       "تمت الإزالة من السلة",
     );
 
+  const addBundle = (bundle, quantity = 1) => {
+    if (!requireSignIn()) return Promise.resolve(false);
+    return run(
+      async () => {
+        await salesApi.addBundleToCart(bundle.id, quantity);
+        await data.refreshCart();
+      },
+      "Bundle added to your cart",
+      "تمت إضافة الباقة إلى سلة التسوق",
+    );
+  };
+
+  const updateBundleQuantity = (lineId, quantity) =>
+    run(async () => {
+      await salesApi.updateCartBundle(lineId, quantity);
+      await data.refreshCart();
+    });
+
+  const removeBundle = (lineId) =>
+    run(
+      async () => {
+        await salesApi.removeCartBundle(lineId);
+        await data.refreshCart();
+      },
+      "Removed from your cart",
+      "تمت الإزالة من السلة",
+    );
+
+  const applyCoupon = (code) =>
+    run(
+      async () => {
+        await salesApi.applyCoupon(code.trim());
+        await data.refreshCart();
+      },
+      "Coupon applied",
+      "تم تطبيق القسيمة",
+    );
+
+  const removeCoupon = () =>
+    run(async () => {
+      await salesApi.removeCoupon();
+      await data.refreshCart();
+    });
+
   const toggleFavorite = (product) => {
     if (!requireSignIn()) return Promise.resolve(false);
     const remove = isFavorite(product.id);
@@ -103,13 +148,20 @@ export function ShopProvider({ children }) {
     <ShopContext.Provider
       value={{
         ...data,
-        cartCount: data.cart.reduce((sum, item) => sum + item.quantity, 0),
+        cartCount:
+          data.cart.reduce((sum, item) => sum + item.quantity, 0) +
+          data.cartInfo.bundles.reduce((sum, b) => sum + b.quantity, 0),
         requireSignIn,
         cartItemFor,
         isFavorite,
         addToCart,
         updateCartQuantity,
         removeFromCart,
+        addBundle,
+        updateBundleQuantity,
+        removeBundle,
+        applyCoupon,
+        removeCoupon,
         toggleFavorite,
         checkout,
         cancelOrder,

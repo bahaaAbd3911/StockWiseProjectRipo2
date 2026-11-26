@@ -8,8 +8,13 @@ export const formatDate = (iso, isAr, withTime = false) =>
     ...(withTime && { hour: "2-digit", minute: "2-digit" }),
   });
 
+// What one unit costs. Products from the API carry finalPrice, worked out by the
+// backend: the product's own discount or a live offer, whichever is lower. The
+// formula is only a fallback for objects without it (e.g. a form being edited).
 export const finalPrice = (product) =>
-  product.price * (1 - (Number(product.discountValue) || 0) / 100);
+  typeof product.finalPrice === "number"
+    ? product.finalPrice
+    : product.price * (1 - (Number(product.discountValue) || 0) / 100);
 
 export const nextId = (list, key = "id") =>
   Math.max(0, ...list.map((item) => Number(item[key]) || 0)) + 1;

@@ -10,7 +10,7 @@ import boxIcon from "../../../../assets/images/Icon/box.png";
 import { AuthContext } from "../../../../context/AuthContext";
 import { useShop } from "../../../../hooks/useShop";
 import { useLang } from "../../../../hooks/useLang";
-import { cartSubtotal, formatMoney } from "../../../../utils/format";
+import { formatMoney } from "../../../../utils/format";
 import FormHeader from "../FormHeader";
 import ReviewCard from "./ReviewCard";
 import { usePlaceOrder } from "../usePlaceOrder";
@@ -18,10 +18,10 @@ import { usePlaceOrder } from "../usePlaceOrder";
 // Final step: review everything, then submit the order to the database.
 function PlaceOrder({ setSelectedStage }) {
   const { dark, orderStages, orderFormFields: f } = useContext(AuthContext);
-  const { cart, cartCount } = useShop();
+  const { cartInfo, cartCount } = useShop();
   const { tr } = useLang();
   const { placeOrder, placing } = usePlaceOrder();
-  const total = cartSubtotal(cart);
+  const total = cartInfo.total;
   const edit = tr("Edit", "تعديل");
 
   return (
@@ -60,6 +60,8 @@ function PlaceOrder({ setSelectedStage }) {
           title={tr("Order Items", "عناصر الطلب")}
           lines={[
             [tr("Items", "العناصر"), cartCount],
+            ...(cartInfo.coupon ? [[tr("Coupon", "القسيمة"), cartInfo.coupon.code]] : []),
+            ...(cartInfo.discount > 0 ? [[tr("Discount", "الخصم"), `−${formatMoney(cartInfo.discount)}`]] : []),
             [tr("Total", "الإجمالي"), formatMoney(total)],
           ]}
         />

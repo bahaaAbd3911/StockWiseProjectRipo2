@@ -22,6 +22,9 @@
 # when DATABASE_URL is set in the env file (pg_dump then runs in a temporary
 # postgres container, so nothing needs to be installed on the server).
 set -euo pipefail
+# Git Bash on Windows rewrites container paths like /uploads into Windows
+# paths; this turns that off (no effect on Linux).
+export MSYS_NO_PATHCONV=1
 
 cd "$(dirname "$0")/.."
 ENV_FILE=${ENV_FILE:-.env.production}
@@ -47,7 +50,9 @@ stamp=$(date -u +%Y-%m-%dT%H%MZ)
 db_file="$BACKUP_DIR/stockwise-db-$stamp.dump"
 uploads_file="$BACKUP_DIR/stockwise-uploads-$stamp.tar.gz"
 tmp="$db_file.partial"
-trap 'rm -f "$tmp"' EXIT
+uploads_tmp="$uploads_file.partial"
+# A failed step never leaves a half-written file that looks like a backup.
+trap 'rm -f "$tmp" "$uploads_tmp"' EXIT
 
 # ---- 1 + 2: database ----
 database_url=$(env_value DATABASE_URL)
@@ -69,7 +74,8 @@ log "database: $db_file ($(du -h "$db_file" | cut -f1))"
 # ---- 3: uploaded images (only with STORAGE_DRIVER=local; S3 buckets have their own versioning) ----
 volume="${COMPOSE_PROJECT}_uploads"
 if docker volume inspect "$volume" > /dev/null 2>&1; then
-	docker run --rm -v "$volume:/uploads:ro" alpine tar czf - -C /uploads . > "$uploads_file"
+	docker run --rm -v "$volume:/uploads:ro" alpine tar czf - -C /uploads . > "$uploads_tmp"
+	mv "$uploads_tmp" "$uploads_file"
 	log "uploads: $uploads_file ($(du -h "$uploads_file" | cut -f1))"
 else
 	log "no $volume volume (S3 storage?) - skipping uploads"

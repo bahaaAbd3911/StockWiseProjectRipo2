@@ -12,6 +12,9 @@
 #
 # Uses the db service of docker-compose.yml (ENV_FILE, default .env.production).
 set -euo pipefail
+# Git Bash on Windows rewrites container paths like /uploads into Windows
+# paths; this turns that off (no effect on Linux).
+export MSYS_NO_PATHCONV=1
 
 cd "$(dirname "$0")/.."
 ENV_FILE=${ENV_FILE:-.env.production}
@@ -54,7 +57,7 @@ case "$mode" in
 	[ "$answer" = "restore" ] || { echo "cancelled"; exit 1; }
 
 	echo "stopping the API ..."
-	compose stop api caddy
+	compose stop api web
 	echo "restoring the database ..."
 	psql_db -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid()" > /dev/null
 	psql_db -d postgres -c "DROP DATABASE $db" -c "CREATE DATABASE $db" > /dev/null

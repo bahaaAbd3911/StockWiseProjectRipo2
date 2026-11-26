@@ -1,5 +1,5 @@
 // Converts API (snake_case) objects into the shapes the components use, and back.
-// Backend shapes: see backend/docs/GUIDE.md, section 12 (API reference).
+// Backend shapes: see docs/19-api-reference.md.
 
 const num = (value) => Number(value) || 0;
 
@@ -155,6 +155,21 @@ export const toCartItem = (i) => ({
   color: i.selected_color,
   isAvailable: i.is_available !== false,
   unavailableReason: i.unavailable_reason ?? "",
+});
+
+// A bundle in the cart: one line, one price, several products inside.
+export const toCartBundle = (b) => ({
+  id: b.id,
+  bundleId: b.bundle_id,
+  name: b.name,
+  nameAr: b.name_ar,
+  image: b.image_url ?? b.items?.[0]?.primary_image_url ?? "",
+  unitPrice: num(b.unit_price),
+  lineTotal: num(b.line_total),
+  quantity: b.quantity,
+  isAvailable: b.is_available !== false,
+  unavailableReason: b.unavailable_reason ?? "",
+  contents: (b.items ?? []).map((i) => `${i.quantity} x ${i.product_name}`).join(", "),
 });
 
 // A favorite embeds the whole product.

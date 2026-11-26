@@ -89,6 +89,24 @@ function SearchBar() {
             <div
               className={heartLoveClass}
               role="button"
+              title={lang === "arb" ? "العروض" : "Offers"}
+              aria-label={lang === "arb" ? "العروض" : "Offers"}
+              onClick={() => navigate("/client/offers")}
+            >
+              <i className="fa-solid fa-tags"></i>
+            </div>
+            <div
+              className={heartLoveClass}
+              role="button"
+              title={lang === "arb" ? "الباقات" : "Bundles"}
+              aria-label={lang === "arb" ? "الباقات" : "Bundles"}
+              onClick={() => navigate("/client/bundles")}
+            >
+              <i className="fa-solid fa-boxes-stacked"></i>
+            </div>
+            <div
+              className={heartLoveClass}
+              role="button"
               aria-label={lang === "arb" ? "المفضلة" : "Favorites"}
               onClick={() => openTab(3)}
             >

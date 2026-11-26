@@ -15,7 +15,7 @@
 #
 # Note: Let's Encrypt issues at most 50 certificates per week per registered
 # domain. With many store subdomains, switch them to one wildcard certificate
-# (*.myplatform.com) - see docs/production.md, "Many stores".
+# (*.myplatform.com) - see docs/21-deployment-and-operations.md, "Many stores".
 
 {
 	email {$ACME_EMAIL}
@@ -57,6 +57,28 @@ https:// {
 	# Everything else is the React app; unknown paths load index.html so the
 	# app's own routes (/client/home, /admin, ...) work on reload.
 	handle {
+		# The API sends its own (stricter) headers; these protect the pages:
+		#   - CSP: only our own scripts run, so injected markup cannot run code
+		#     or read the login token. Fonts/icons come from Google Fonts and
+		#     cdnjs; product images may be any https address.
+		#   - frame-ancestors / X-Frame-Options: no other site can frame the
+		#     shop or the admin panel (clickjacking).
+		header {
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+			X-Frame-Options "DENY"
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Strict-Transport-Security "max-age=63072000"
+		}
+		# index.html must never be cached (it names the current build's files);
+		# the hashed files in /assets can be cached for a year.
+		# (Matched on the address asked for: app routes like /client/home are
+		# index.html too.)
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+
 		root * /srv
 		try_files {path} /index.html
 		file_server

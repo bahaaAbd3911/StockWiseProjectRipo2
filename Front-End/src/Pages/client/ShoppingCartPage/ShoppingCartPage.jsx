@@ -6,6 +6,7 @@ import Header from "../../../components/client/Header/Header";
 import EmptyMessage from "../../../components/client/EmptyMessage/EmptyMessage";
 import SignInRequired from "../../../components/client/SignInRequired/SignInRequired";
 import CartItemRow from "../../../components/client/Cart/CartItemRow";
+import CartBundleRow from "../../../components/client/Cart/CartBundleRow";
 import CartSummary from "../../../components/client/Cart/CartSummary";
 import styles from "../../../components/client/Cart/Cart.module.css";
 import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
@@ -13,7 +14,8 @@ import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
 // Shown inside the profile page ("My Cart" tab) and at /client/shoppingList.
 function ShoppingCartPage() {
   const { isSign } = useContext(AuthContext);
-  const { cart } = useShop();
+  const { cart, cartInfo } = useShop();
+  const empty = cart.length === 0 && cartInfo.bundles.length === 0;
 
   if (!isSign) return <SignInRequired />;
 
@@ -28,7 +30,7 @@ function ShoppingCartPage() {
         img={cartImg}
       />
 
-      {cart.length === 0 ? (
+      {empty ? (
         <EmptyMessage
           img={cartImg}
           title={"Your cart is empty"}
@@ -41,6 +43,9 @@ function ShoppingCartPage() {
           <div className={styles.list}>
             {cart.map((item) => (
               <CartItemRow key={item.id} item={item} />
+            ))}
+            {cartInfo.bundles.map((bundle) => (
+              <CartBundleRow key={`bundle-${bundle.id}`} bundle={bundle} />
             ))}
           </div>
           <CartSummary />

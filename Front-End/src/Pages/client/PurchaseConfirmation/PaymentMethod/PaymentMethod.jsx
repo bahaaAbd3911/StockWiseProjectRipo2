@@ -19,14 +19,42 @@ import paypal from "../../../../assets/images/Icon/paypal.png";
 import dollar from "../../../../assets/images/Icon/dollar.png";
 
 // Import Hooks
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { AuthContext } from "../../../../context/AuthContext";
+import { useShop } from "../../../../hooks/useShop";
+import { fetchMyDebt } from "../../../../api/sales";
+import { formatMoney } from "../../../../utils/format";
 
 function PaymentMethod({ setSelectedStage}) {
   const { lang, orderStages, dark, orderFormFields} =
     useContext(AuthContext);
 
+  const { cartInfo } = useShop();
+  // Pay later is only offered to customers the store gave a credit limit.
+  const [debt, setDebt] = useState(null);
+  useEffect(() => {
+    let current = true;
+    fetchMyDebt()
+      .then((res) => current && setDebt(res.account))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, []);
+
   const methods = [
+    ...(debt?.payLaterAllowed
+      ? [
+          {
+            src: dollar,
+            title: "Pay Later",
+            arbTitle: "الدفع لاحقاً",
+            subTitle: `Added to your balance (available credit ${formatMoney(debt.availableCredit)})`,
+            arbSubTitle: `يُضاف إلى رصيدك (الرصيد المتاح ${formatMoney(debt.availableCredit)})`,
+            isAvailable: debt.availableCredit >= cartInfo.total,
+          },
+        ]
+      : []),
     {
       src: dollar,
       title: "Cash On Delivery",

@@ -71,7 +71,8 @@ services:
       - "443:443"
       - "443:443/udp" # HTTP/3
     environment:
-      ACME_EMAIL: ${ACME_EMAIL:-}       # Let's Encrypt expiry notices (optional)
+      # Let's Encrypt warns this address before a certificate expires (required).
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.production}
     volumes:
       - caddy-data:/data # certificates: keep this volume
       - caddy-config:/config

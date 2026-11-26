@@ -10,7 +10,7 @@ import {
 import { AuthContext } from "../../../context/AuthContext";
 import { useShop } from "../../../hooks/useShop";
 
-const LOG_OUT = 4;
+const LOG_OUT = 6; // last tab in PROFILE_TABS
 
 // Profile page tabs. Shows live counts for orders, cart and favorites.
 function ClientList() {
