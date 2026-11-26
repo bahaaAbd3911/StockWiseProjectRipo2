@@ -19,7 +19,6 @@ accounts. The steps are in [21-deployment-and-operations.md](21-deployment-and-o
 
 | Item | Why |
 |---|---|
-| Compress the images in `Front-End/src/assets` (WebP, real display size, a small favicon) | 9.8 MB of images is the biggest speed problem left |
 | An admin "Emails" page | the email-queue endpoints exist but have no screen |
 | `npm audit fix` | development-tool warnings |
 | Browser tests (e.g. Playwright) for the main flows | the API side of every screen is tested, the clicking is not |

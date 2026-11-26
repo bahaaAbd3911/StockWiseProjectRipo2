@@ -150,4 +150,5 @@ short:
 - product pages now show offer prices;
 - a flaky test fixed;
 - the admin panel split out of the shoppers' download (824 KB → 582 KB);
+- the images compressed (9.0 MB → 0.55 MB; the whole build 10.7 MB → 1.7 MB);
 - every test passes, also under Go's race detector.

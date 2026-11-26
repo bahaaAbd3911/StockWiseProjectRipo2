@@ -4,7 +4,7 @@ import { useLang } from "../../../hooks/useLang";
 import { fetchMyDebt } from "../../../api/sales";
 import { formatDate, formatMoney } from "../../../utils/format";
 import Header from "../../../components/client/Header/Header";
-import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
+import cartImg from "../../../assets/images/ShoppingCart/cartLogo.webp";
 import styles from "./Sales.module.css";
 
 const TYPE_LABELS = {

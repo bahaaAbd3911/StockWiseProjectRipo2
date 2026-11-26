@@ -6,7 +6,7 @@ import { useToast } from "../../../hooks/useToast";
 import { cancelWaiting, fetchMyWaitingList } from "../../../api/sales";
 import { formatDate } from "../../../utils/format";
 import Header from "../../../components/client/Header/Header";
-import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.png";
+import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.webp";
 import styles from "./Sales.module.css";
 
 const STATUS = {

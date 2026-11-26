@@ -21,7 +21,7 @@ import ShippingForm from "./ShippingForm/ShippingForm";
 import PaymentMethod from "./PaymentMethod/PaymentMethod";
 import PlaceOrder from "./PlaceOrder/PlaceOrder";
 import OrderSummery from "./OrderSummery/OrderSummery";
-import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
+import cartImg from "../../../assets/images/ShoppingCart/cartLogo.webp";
 
 const STEPS = { Shipping: ShippingForm, Payment: PaymentMethod, Review: PlaceOrder };
 

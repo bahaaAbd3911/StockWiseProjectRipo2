@@ -7,7 +7,7 @@ import Header from "../../../components/client/Header/Header";
 import Products from "../../../components/client/Products/Products";
 import EmptyMessage from "../../../components/client/EmptyMessage/EmptyMessage";
 import SignInRequired from "../../../components/client/SignInRequired/SignInRequired";
-import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.png";
+import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.webp";
 
 // Shown inside the profile page ("My Favorites" tab) and at /client/favoriteList.
 function FavoritePage() {

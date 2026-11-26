@@ -19,11 +19,11 @@ import {
 } from "./LoadingPage.module.css";
 
 // Import Images
-import bottom_left_shopping_bag from "../../assets/images/Loading/bottom_left_shopping_bag_watermark.png";
-import bottom_right_wave from "../../assets/images/Loading/bottom_right_wave_background.png";
-import shopping_cart from "../../assets/images/Loading/shopping_cart_illustration.png";
-import top_left_wave from "../../assets/images/Loading/top_left_wave_background.png";
-import top_right_shopping from "../../assets/images/Loading/top_right_shopping_bag_watermark.png";
+import bottom_left_shopping_bag from "../../assets/images/Loading/bottom_left_shopping_bag_watermark.webp";
+import bottom_right_wave from "../../assets/images/Loading/bottom_right_wave_background.webp";
+import shopping_cart from "../../assets/images/Loading/shopping_cart_illustration.webp";
+import top_left_wave from "../../assets/images/Loading/top_left_wave_background.webp";
+import top_right_shopping from "../../assets/images/Loading/top_right_shopping_bag_watermark.webp";
 
 // Import Hooks
 import { useContext, useEffect } from "react";

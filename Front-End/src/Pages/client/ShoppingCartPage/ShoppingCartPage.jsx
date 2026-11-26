@@ -9,7 +9,7 @@ import CartItemRow from "../../../components/client/Cart/CartItemRow";
 import CartBundleRow from "../../../components/client/Cart/CartBundleRow";
 import CartSummary from "../../../components/client/Cart/CartSummary";
 import styles from "../../../components/client/Cart/Cart.module.css";
-import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
+import cartImg from "../../../assets/images/ShoppingCart/cartLogo.webp";
 
 // Shown inside the profile page ("My Cart" tab) and at /client/shoppingList.
 function ShoppingCartPage() {

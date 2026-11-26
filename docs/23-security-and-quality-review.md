@@ -49,7 +49,7 @@ found, and what was changed.
 | Finding | Change | Result |
 |---|---|---|
 | Shoppers downloaded the whole admin panel and platform console in one 824 KB JavaScript file | admin pages, the admin layout and the platform console load with `React.lazy` only when opened | the shop's main file is **582 KB** (182 KB gzipped), −29% |
-| The build contains **9.8 MB of images**, e.g. `perfume.jpg` 2.4 MB, `favoriteLogo.png` 1.4 MB, `cartLogo.png` 1.3 MB, the banner 1.3 MB, `bg1.png` 1.3 MB, and the favicon `webIcon.jpeg` 472 KB | **not changed**: these are the design team's files | converting them to WebP at the size they are shown would likely cut this by 80–90% and is the biggest speed win left; the favicon should be a small 32–64 px image |
+| The build contained **9.0 MB of images**, e.g. `perfume.jpg` 2.4 MB (5184 px wide), two 1.4 MB illustrations shown at 500 px, two 1.3 MB backgrounds, and a 461 KB favicon | photos resized to 1920 px and recompressed as JPEG; illustrations and backgrounds converted to WebP at twice their display size (transparency kept); icons resized to 160 px; favicon replaced by a 64 px PNG (`public/favicon.png`). Compared side by side: no visible difference. Originals are in git history | images **9.0 MB → 0.55 MB**; the whole build **10.7 MB → 1.7 MB** |
 | Dashboard and list queries | indexes on `orders.created_at` and `status` exist (000005); the dashboard reads one snapshot | no change needed |
 | Store lookups on every request | host → store is cached for 30 s; the store setting is sent to the database only when it changes | no change needed |
 

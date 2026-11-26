@@ -8,7 +8,7 @@ import UserSettings from "../../../components/common/UserSettings/UserSettings";
 import SearchBar from "../../../components/common/SearchBar/SearchBar";
 import Footer from "../../../components/common/Footer/Footer";
 import Products from "../../../components/client/Products/Products";
-import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.png";
+import favoriteImg from "../../../assets/images/Favorites/favoriteLogo.webp";
 import styles from "./Sales.module.css";
 
 const discountText = (o, tr) =>

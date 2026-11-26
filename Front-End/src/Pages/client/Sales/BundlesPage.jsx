@@ -8,7 +8,7 @@ import Header from "../../../components/client/Header/Header";
 import UserSettings from "../../../components/common/UserSettings/UserSettings";
 import SearchBar from "../../../components/common/SearchBar/SearchBar";
 import Footer from "../../../components/common/Footer/Footer";
-import cartImg from "../../../assets/images/ShoppingCart/cartLogo.png";
+import cartImg from "../../../assets/images/ShoppingCart/cartLogo.webp";
 import styles from "./Sales.module.css";
 
 // /client/bundles: product sets sold together for one lower price.
