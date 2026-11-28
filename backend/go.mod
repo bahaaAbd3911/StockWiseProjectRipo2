@@ -4,10 +4,12 @@ go 1.27.4
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
+	github.com/minio/minio-go/v7 v7.4.1
 	github.com/shopspring/decimal v1.6.0
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/image v0.48.0
 )
 
 require (
@@ -22,14 +24,12 @@ require (
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.4.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/image v0.48.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
