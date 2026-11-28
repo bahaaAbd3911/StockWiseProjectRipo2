@@ -6,7 +6,7 @@
 #   docker run --env-file .env stockwise-api /app/migrate up         # migrations
 
 # ---- build ----
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.4-alpine AS build
 WORKDIR /src
 
 # Download modules first so this layer is cached until go.mod/go.sum change.
