@@ -76,7 +76,7 @@ docker stop sw-race-db && docker network rm sw-race
 
 ## 22.4 Continuous integration (GitHub Actions)
 
-`.github/workflows/ci.yml` runs on every push to `main` or `backend` and on
+`.github/workflows/ci.yml` runs on every push to `main` and on
 every pull request. The result shows as a green tick or red cross next to
 the commit on GitHub.
 

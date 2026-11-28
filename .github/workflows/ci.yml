@@ -1,4 +1,4 @@
-# Continuous integration: every push to main or backend, and every pull
+# Continuous integration: every push to main, and every pull
 # request, is checked before it can break the live site.
 #
 #   backend   gofmt, go vet, all Go tests (unit + end-to-end on a throwaway
@@ -15,7 +15,7 @@ name: CI
 
 on:
   push:
-    branches: [main, backend]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
