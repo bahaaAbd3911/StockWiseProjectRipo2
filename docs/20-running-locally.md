@@ -6,6 +6,49 @@
 - Node.js and npm
 - PostgreSQL, running locally (or a cloud database such as Neon)
 
+## The development database (PostgreSQL in Docker)
+
+The recommended local database runs in Docker (`backend/docker-compose.dev.yml`):
+nothing to install on Windows, the same PostgreSQL 18 as production and CI,
+and it can be reset without touching anything else.
+
+```powershell
+cd backend
+# once: add a random password to .env
+#   DEV_DB_PASSWORD=<random letters and digits>
+#   DATABASE_URL=postgres://postgres:<that password>@localhost:5433/ecommerce?sslmode=disable
+docker compose -f docker-compose.dev.yml up -d    # start (restarts itself after a reboot)
+go run ./cmd/migrate up                           # create / update the tables
+```
+
+- It listens only on this computer, on port **5433**. Port 5432 is left
+  free for a PostgreSQL installed on Windows.
+- The data lives in the Docker volume `stockwise-dev_pgdata`. `stop` and
+  `up` keep it; deleting the volume deletes it.
+- Backup:
+
+  ```
+  docker exec stockwise-dev-db-1 pg_dump -U postgres --format=custom ecommerce > dev.dump
+  ```
+
+- The data from the earlier Windows PostgreSQL (port 5432) was copied into
+  it on 2026-11-28. Every table's row count matched, and so did the
+  isolation policies and permissions. The old database was left untouched,
+  and its setting is kept as a comment in `.env`.
+
+**If the site is slow on Windows:** measure where the time goes before
+blaming the database. On this project's PC (2026-11-28):
+
+- inside Docker's network, queries took under 1 ms;
+- from Windows programs to `localhost`, 42% of them stalled for up to
+  3 seconds, whichever database was used.
+
+The cause is on the Windows side. The usual suspects are a loopback
+capture driver (the **Npcap Loopback Adapter**, installed with
+Wireshark/Nmap) and antivirus scanning of database files and local
+traffic. Disable or uninstall them (administrator rights needed) and
+measure again.
+
 ## One shop
 
 ```powershell

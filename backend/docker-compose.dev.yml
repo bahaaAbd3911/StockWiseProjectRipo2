@@ -1,0 +1,36 @@
+# Development database: PostgreSQL 18 in Docker, for running the project on
+# your own computer (the production stack is docker-compose.yml).
+#
+#   docker compose -f docker-compose.dev.yml up -d     # start (also after a reboot it restarts itself)
+#   docker compose -f docker-compose.dev.yml stop      # stop; the data stays in the volume
+#
+# Reachable only from this computer, on port 5433 (5432 is left to a
+# PostgreSQL installed on Windows, if any). The password comes from
+# DEV_DB_PASSWORD in backend/.env, which docker compose reads automatically;
+# DATABASE_URL in the same file points the API at it:
+#   DATABASE_URL=postgres://postgres:<DEV_DB_PASSWORD>@localhost:5433/ecommerce?sslmode=disable
+#
+# The data lives in the Docker volume "stockwise-dev_pgdata". Deleting that
+# volume deletes the data: back it up first (docs/20-running-locally.md).
+name: stockwise-dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:?set DEV_DB_PASSWORD in backend/.env}
+      POSTGRES_DB: ecommerce
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql # PostgreSQL 18 images keep data in /var/lib/postgresql/18/...
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
