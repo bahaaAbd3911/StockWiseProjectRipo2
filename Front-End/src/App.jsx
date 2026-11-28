@@ -14,6 +14,7 @@ import LoadingPage from "./Pages/LoadingPage/LoadingPage";
 import VerifyEmail from "./Pages/account/VerifyEmail";
 import ResetPassword from "./Pages/account/ResetPassword";
 import { DebtLink, OrderLink, ProductLink } from "./Pages/account/EmailLinks";
+import Invoice from "./Pages/account/Invoice";
 
 // The admin panel is loaded only when an admin opens it, so shoppers do not
 // download it.
@@ -108,6 +109,7 @@ function App() {
           <Route path="/orders/:orderId" element={<OrderLink />} />
           <Route path="/account/debt" element={<DebtLink />} />
           <Route path="/products/:productId" element={<ProductLink />} />
+          <Route path="/invoice/:orderId" element={<Invoice />} />
           <Route path="*" element={<Navigate to="/client/home" replace />} />
         </Routes>
       </Suspense>

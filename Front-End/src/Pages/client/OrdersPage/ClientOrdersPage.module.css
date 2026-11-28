@@ -320,3 +320,12 @@
         justify-content: center;
     }
 }
+
+.invoiceLinkClass {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0;
+    color: var(--color-primary);
+    font-weight: 600;
+}

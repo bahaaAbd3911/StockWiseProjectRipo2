@@ -95,6 +95,23 @@ func (h *OrderHandler) AdminGet(w http.ResponseWriter, r *http.Request) error {
 	return httpx.JSON(w, http.StatusOK, order)
 }
 
+// AdminSetNote: PUT /api/admin/orders/{id}/note {note}
+func (h *OrderHandler) AdminSetNote(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var req models.UpdateOrderNoteRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	order, err := h.orders.SetNote(r.Context(), id, req)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, order)
+}
+
 // AdminUpdateStatus: PUT /api/admin/orders/{id}/status {status, payment_collected?}
 func (h *OrderHandler) AdminUpdateStatus(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")

@@ -55,6 +55,10 @@ export default function OrderDetails({ order }) {
         </span>
       </div>
 
+      <a className={styles.invoiceLinkClass} href={`/invoice/${order.id}`} target="_blank" rel="noopener">
+        <i className="fa-solid fa-file-invoice"></i> {tr("Invoice", "الفاتورة")}
+      </a>
+
       {order.status === "pending" && (
         <button type="button" className={styles.cancelOrderBtnClass} onClick={() => cancelOrder(order.id)}>
           <i className="fa-solid fa-ban"></i> {tr("Cancel Order", "إلغاء الطلب")}

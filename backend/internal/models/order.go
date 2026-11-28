@@ -84,14 +84,18 @@ type Order struct {
 	CouponCode             *string         `json:"coupon_code"`     // copy of the code used, if any
 	ShippingAmount         decimal.Decimal `json:"shipping_amount"` // delivery fee charged (copy of the store's rule at checkout)
 	TotalAmount            decimal.Decimal `json:"total_amount"`    // subtotal - discount + shipping: what the customer pays
-	Status                 string          `json:"status"`
-	PaymentMethod          string          `json:"payment_method"`
-	PaymentStatus          string          `json:"payment_status"`
-	Items                  []OrderItem     `json:"items"`
-	Bundles                []OrderBundle   `json:"bundles"`
-	Customer               *OrderCustomer  `json:"customer,omitempty"` // admin views only
-	CreatedAt              time.Time       `json:"created_at"`
-	UpdatedAt              time.Time       `json:"updated_at"`
+	// AdminNote: the store's private note. Only the admin endpoints fill it
+	// (nil, and so left out of the JSON, for customers).
+	AdminNote          *string        `json:"admin_note,omitempty"`
+	AdminNoteUpdatedAt *time.Time     `json:"admin_note_updated_at,omitempty"`
+	Status             string         `json:"status"`
+	PaymentMethod      string         `json:"payment_method"`
+	PaymentStatus      string         `json:"payment_status"`
+	Items              []OrderItem    `json:"items"`
+	Bundles            []OrderBundle  `json:"bundles"`
+	Customer           *OrderCustomer `json:"customer,omitempty"` // admin views only
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 type OrderItem struct {
@@ -111,6 +115,14 @@ type OrderItem struct {
 	// null if the product or its images were removed).
 	ProductImageURL *string `json:"product_image_url"`
 }
+
+// UpdateOrderNoteRequest: PUT /api/admin/orders/{id}/note. An empty note clears it.
+type UpdateOrderNoteRequest struct {
+	Note string `json:"note"`
+}
+
+// MaxOrderNoteLength matches the orders_admin_note_length check (migration 000011).
+const MaxOrderNoteLength = 2000
 
 type OrderCustomer struct {
 	FirstName string `json:"first_name"`

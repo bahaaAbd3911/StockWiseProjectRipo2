@@ -38,6 +38,7 @@ export const removeFavorite = (productId) => api(`/api/favorites/${productId}`, 
 export const createAddress = (address) => api("/api/addresses", { method: "POST", body: address });
 
 export const fetchMyOrders = async () => ((await api("/api/orders")) ?? []).map(toOrder);
+export const fetchMyOrder = async (id) => toOrder(await api(`/api/orders/${id}`));
 export const placeOrder = async (addressId, paymentMethod) =>
   toOrder(await api("/api/orders", { method: "POST", body: { address_id: addressId, payment_method: paymentMethod } }));
 export const cancelMyOrder = (orderId) => api(`/api/orders/${orderId}/cancel`, { method: "POST" });

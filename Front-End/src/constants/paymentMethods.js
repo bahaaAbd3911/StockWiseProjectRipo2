@@ -5,6 +5,11 @@ export const PAYMENT_METHODS = {
     ar: "الدفع عند الاستلام",
     icon: "fa-solid fa-money-bill-wave",
   },
+  pay_later: {
+    en: "Pay Later",
+    ar: "الدفع لاحقاً",
+    icon: "fa-solid fa-wallet",
+  },
   credit_card: {
     en: "Credit Card",
     ar: "بطاقة ائتمان",

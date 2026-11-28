@@ -6,7 +6,8 @@
 #   frontend  npm ci, ESLint, production build (on Linux, so a wrong letter
 #             case in an import fails here instead of on the server)
 #   security  govulncheck: known vulnerabilities in Go dependencies and the
-#             Go standard library actually used by the code
+#             Go standard library actually used by the code; staticcheck:
+#             likely bugs and dead code
 #   docker    both production images build and the Caddyfile is valid
 #
 # A red check on GitHub shows which job and step failed; click it for the log.
@@ -100,7 +101,7 @@ jobs:
         run: npm run build
 
   security:
-    name: Go vulnerability scan
+    name: Go vulnerability scan and static analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -116,6 +117,10 @@ jobs:
 
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # Static analysis: bugs and dead code that go vet does not catch.
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
   docker:
     name: Docker images

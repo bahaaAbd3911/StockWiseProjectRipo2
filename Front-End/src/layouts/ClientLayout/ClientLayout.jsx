@@ -21,6 +21,7 @@ import FavoritePage from "../../Pages/client/FavoritePage/FavoritePage";
 import ClientProfilePage from "../../Pages/client/ProfilePage/ClientProfilePage";
 import OffersPage from "../../Pages/client/Sales/OffersPage";
 import BundlesPage from "../../Pages/client/Sales/BundlesPage";
+import LegalPage from "../../Pages/client/Legal/LegalPage";
 import VerifyEmailBanner from "../../components/client/VerifyEmailBanner/VerifyEmailBanner";
 
 function ClientLayout() {
@@ -49,6 +50,8 @@ function ClientLayout() {
         <Route path="profile" element={<ClientProfilePage />} />
         <Route path="offers" element={<OffersPage />} />
         <Route path="bundles" element={<BundlesPage />} />
+        <Route path="privacy" element={<LegalPage page="privacy" />} />
+        <Route path="terms" element={<LegalPage page="terms" />} />
 
         <Route path="*" element={<Navigate to="/client/home" replace />} />
       </Routes>

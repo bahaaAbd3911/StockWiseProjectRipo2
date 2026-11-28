@@ -126,6 +126,9 @@ export const toOrder = (o) => {
     customerPhone: o.phone,
     address: [o.city, o.area, o.street, o.building_number].filter(Boolean).join(", "),
     notes: o.additional_instructions ?? "",
+    // Admin endpoints only: the store's private note.
+    adminNote: o.admin_note ?? "",
+    adminNoteUpdatedAt: o.admin_note_updated_at ?? null,
     paymentMethod: o.payment_method,
     paymentStatus: o.payment_status,
     status: o.status,

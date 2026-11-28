@@ -172,3 +172,14 @@
         gap: 20px;
     }
 }
+/* Footer links look like the rest of the footer text. */
+.linksContainerClass a,
+.serviceContainerClass a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.linksContainerClass a:hover,
+.serviceContainerClass a:hover {
+    text-decoration: underline;
+}

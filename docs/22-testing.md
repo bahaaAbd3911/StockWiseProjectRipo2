@@ -63,6 +63,7 @@ docker stop sw-race-db && docker network rm sw-race
 | `TestAccountSecurity`, `TestLoginRevocation`, `TestPasswordReset`, `TestRateLimits` | account protection |
 | `TestEmailVerification` | blocked checkout, resend, bad links, then checkout works |
 | `TestOffers`, `TestBundles`, `TestCustomerDebts`, `TestCoupons` | promotions and pay later, including the coupon last-use race |
+| `TestOrderAdminNotes`, `TestCSVExports` | notes saved, trimmed and limited, never shown to customers; CSV files with the byte-order mark, header, items, filters, Arabic text, formulas neutralised, admins only |
 | `TestShippingFees` | settings validation, the cart estimate for the default and a chosen city, free over the threshold, the fee charged and kept on the order, the email line |
 | `TestSalesScreens` | **the exact bodies the React sales screens send and every field they read**: coupon / offer / bundle forms, field errors, offers page, bundles in the cart, coupon totals, My Balance, pay-later checkout, statements, payments, corrections, Notify me, waiting lists |
 | `TestOrderNotifications`, `TestEmailDeliveryIsRetried`, `TestDebtNotificationsAndReminders`, `TestBackInStockEmails`, `TestAdminEmailQueue` | emails and the queue |
@@ -84,7 +85,7 @@ the commit on GitHub.
 |---|---|
 | Backend (Go) | `gofmt`, `go vet`, every Go test under the race detector, against a throwaway PostgreSQL 18 service |
 | Frontend (React) | `npm ci` (exact locked versions), ESLint, the production build, all on Linux, so an import whose letter case is wrong fails here and not on the server |
-| Go vulnerability scan | `govulncheck`: known vulnerabilities in the Go code's dependencies and standard library |
+| Go vulnerability scan and static analysis | `govulncheck`: known vulnerabilities in the Go code's dependencies and standard library; `staticcheck`: likely bugs and dead code |
 | Docker images | both production images build, and the Caddyfile is valid (runs after the first two pass) |
 
 **Why:** a mistake is caught minutes after it is pushed, not when a

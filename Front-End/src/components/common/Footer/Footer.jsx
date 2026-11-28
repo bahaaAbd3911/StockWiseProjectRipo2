@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 // Import Style
 import {
   footerContainerClass,
@@ -37,7 +38,8 @@ function Footer() {
   const { footer } = useStoreContent();
   // Only real links (http/https) are shown.
   const socialLinks = Object.entries(footer.social).filter(
-    ([network, link]) => SOCIAL_NETWORKS[network] && /^https?:\/\//i.test(link ?? ""),
+    ([network, link]) =>
+      SOCIAL_NETWORKS[network] && /^https?:\/\//i.test(link ?? ""),
   );
   const SOCIAL_CLASSES = {
     facebook: facebookIconClass,
@@ -73,11 +75,17 @@ function Footer() {
           {/* The store's tagline (Store Settings), or the default two-part one */}
           {footer.tagline || footer.taglineAr ? (
             <div>
-              <span>{lang === "arb" ? footer.taglineAr || footer.tagline : footer.tagline || footer.taglineAr}</span>
+              <span>
+                {lang === "arb"
+                  ? footer.taglineAr || footer.tagline
+                  : footer.tagline || footer.taglineAr}
+              </span>
             </div>
           ) : (
             <div>
-              <span>{lang === "arb" ? "اختر بشكل أفضل" : "Better Choose "}</span>
+              <span>
+                {lang === "arb" ? "اختر بشكل أفضل" : "Better Choose "}
+              </span>
               <span>
                 {lang === "arb" ? "تسوّق بذكاء أكبر" : "Smarter Shopping"}
               </span>
@@ -87,8 +95,16 @@ function Footer() {
 
         <div className={linksContainerClass}>
           <h3>{lang === "arb" ? "روابط سريعة" : "Quick Links"}</h3>
-          <div>{lang === "arb" ? "الرئيسية" : "Home"}</div>
-          <div>{lang === "arb" ? "المتجر" : "Shop"}</div>
+          <div>
+            <Link to="/client/home">
+              {lang === "arb" ? "الرئيسية" : "Home"}
+            </Link>
+          </div>
+          <div>
+            <Link to="/client/products">
+              {lang === "arb" ? "المتجر" : "Shop"}
+            </Link>
+          </div>
           <div>{lang === "arb" ? "من نحن" : "About"}</div>
           <div>{lang === "arb" ? "اتصل بنا" : "Contact"}</div>
         </div>
@@ -98,7 +114,21 @@ function Footer() {
           <div>{lang === "arb" ? "الأسئلة الشائعة" : "FAQs"}</div>
           <div>{lang === "arb" ? "الشحن والتوصيل" : "Shipping"}</div>
           <div>{lang === "arb" ? "الإرجاع والاستبدال" : "Returns"}</div>
-          <div>{lang === "arb" ? "تتبع الطلب" : "Track Order"}</div>
+          <div>
+            <Link to="/orders/latest">
+              {lang === "arb" ? "تتبع الطلب" : "Track Order"}
+            </Link>
+          </div>
+          <div>
+            <Link to="/client/privacy">
+              {lang === "arb" ? "سياسة الخصوصية" : "Privacy Policy"}
+            </Link>
+          </div>
+          <div>
+            <Link to="/client/terms">
+              {lang === "arb" ? "شروط الاستخدام" : "Terms of Use"}
+            </Link>
+          </div>
         </div>
 
         <div className={socialMediaContainerClass}>
@@ -108,8 +138,14 @@ function Footer() {
           <div>
             {socialLinks.length ? (
               socialLinks.map(([network, link]) => (
-                <a key={network} href={link} target="_blank" rel="noopener noreferrer" aria-label={network}
-                  className={SOCIAL_CLASSES[network] ?? facebookIconClass}>
+                <a
+                  key={network}
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={network}
+                  className={SOCIAL_CLASSES[network] ?? facebookIconClass}
+                >
                   <i className={SOCIAL_NETWORKS[network]}></i>
                 </a>
               ))
@@ -137,7 +173,9 @@ function Footer() {
         <div>
           <span>&#169;</span>
           <span>
-            {lang === "arb" ? footer.copyrightAr || footer.copyright : footer.copyright || footer.copyrightAr}
+            {lang === "arb"
+              ? footer.copyrightAr || footer.copyright
+              : footer.copyright || footer.copyrightAr}
           </span>
         </div>
 

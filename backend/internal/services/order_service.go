@@ -92,6 +92,20 @@ func (s *OrderService) Get(ctx context.Context, orderID int64) (models.Order, er
 	return s.orders.Get(ctx, orderID)
 }
 
+// SetNote saves the order's private admin note (trimmed; "" clears it).
+func (s *OrderService) SetNote(ctx context.Context, orderID int64, req models.UpdateOrderNoteRequest) (models.Order, error) {
+	note := strings.TrimSpace(req.Note)
+	c := validators.New()
+	c.MaxLen("note", note, models.MaxOrderNoteLength)
+	if err := c.Err(); err != nil {
+		return models.Order{}, err
+	}
+	if err := s.orders.SetAdminNote(ctx, orderID, note); err != nil {
+		return models.Order{}, err
+	}
+	return s.orders.Get(ctx, orderID)
+}
+
 // UpdateStatus moves an order forward. paymentCollected is only for delivering
 // cash orders: false moves the unpaid amount to the customer's debt.
 func (s *OrderService) UpdateStatus(ctx context.Context, adminID, orderID int64, req models.UpdateOrderStatusRequest) (models.Order, error) {

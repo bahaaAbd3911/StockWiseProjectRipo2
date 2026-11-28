@@ -163,3 +163,18 @@ short:
   failed emails can be retried. See [13-emails.md](13-emails.md) §13.5.
 - **GitHub CI:** every push runs the tests, lint, build, a vulnerability
   scan and the Docker builds. See [22-testing.md](22-testing.md) §22.4.
+
+## Step 12: quick wins and small features
+
+- **Cleanup:**
+  - `npm audit fix` (0 vulnerabilities);
+  - 14 unused images deleted;
+  - `staticcheck` added to CI;
+  - a missing "Pay Later" label fixed in customers' order details.
+- **Private order notes for the store's team** (migration 000011).
+- **A printable invoice / packing slip.**
+- **CSV exports of orders and customers**, built by the backend for Excel
+  (Arabic, store time, formula-safe).
+- **Privacy Policy and Terms pages**, linked from the footer. They describe
+  what the platform really does with data; they should be reviewed legally.
+

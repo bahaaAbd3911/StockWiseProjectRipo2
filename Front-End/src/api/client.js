@@ -55,7 +55,10 @@ const errorMessage = (data, fallback) => {
 
 // token: send this token instead of the shop login (platform admin calls).
 // The "logged out" handler only runs for the shop login.
-async function send(path, { method = "GET", body, form, token: explicitToken } = {}) {
+async function send(
+  path,
+  { method = "GET", body, form, token: explicitToken } = {},
+) {
   const token = explicitToken ?? tokenStore.get();
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -77,7 +80,8 @@ async function send(path, { method = "GET", body, form, token: explicitToken } =
   const data = text ? parse(text) : null;
 
   if (!response.ok) {
-    if (response.status === 401 && token && explicitToken === undefined) onUnauthorized?.();
+    if (response.status === 401 && token && explicitToken === undefined)
+      onUnauthorized?.();
     throw new ApiError(
       response.status,
       errorMessage(data, response.statusText),
@@ -94,8 +98,47 @@ export const api = (path, options) => send(path, options);
 export function upload(path, file, fields = {}, method = "POST") {
   const form = new FormData();
   form.append("image", file);
-  Object.entries(fields).forEach(([key, value]) => form.append(key, String(value)));
+  Object.entries(fields).forEach(([key, value]) =>
+    form.append(key, String(value)),
+  );
   return send(path, { method, form });
+}
+
+// Downloads a file the API generates (e.g. a CSV export) with the login token,
+// and saves it under the name the server gives (Content-Disposition).
+export async function download(path, fallbackName = "download") {
+  const token = tokenStore.get();
+  let response;
+  try {
+    response = await fetch(BASE_URL + path, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new ApiError(0, "Cannot reach the server. Is the backend running?");
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    const data = text ? parse(text) : null;
+    if (response.status === 401 && token) onUnauthorized?.();
+    throw new ApiError(
+      response.status,
+      errorMessage(data, response.statusText),
+      data?.fields ?? {},
+    );
+  }
+  const name =
+    /filename="([^"]+)"/.exec(
+      response.headers.get("Content-Disposition") ?? "",
+    )?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await response.blob());
+  const link = Object.assign(document.createElement("a"), {
+    href: url,
+    download: name,
+  });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Lists come back one page at a time: {items, total, limit, offset}. This reads
@@ -106,7 +149,8 @@ export async function fetchAll(path, pageSize = 100) {
   for (let offset = 0; ; offset += pageSize) {
     const page = await send(`${path}${sep}limit=${pageSize}&offset=${offset}`);
     items.push(...(page?.items ?? []));
-    if (!page || items.length >= page.total || !page.items?.length) return items;
+    if (!page || items.length >= page.total || !page.items?.length)
+      return items;
   }
 }
 
@@ -117,4 +161,5 @@ export const dataUrlToFile = async (dataUrl, name = "image") => {
   return new File([blob], `${name}.${ext}`, { type: blob.type });
 };
 
-export const isDataUrl = (value) => typeof value === "string" && value.startsWith("data:");
+export const isDataUrl = (value) =>
+  typeof value === "string" && value.startsWith("data:");

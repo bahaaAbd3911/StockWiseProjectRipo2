@@ -268,6 +268,13 @@ func New(db *sql.DB, cfg config.Config, mailer mail.Mailer) (*App, error) {
 	admin("GET /api/admin/orders", orders.AdminList)
 	admin("GET /api/admin/orders/{id}", orders.AdminGet)
 	admin("PUT /api/admin/orders/{id}/status", orders.AdminUpdateStatus)
+	admin("PUT /api/admin/orders/{id}/note", orders.AdminSetNote)
+
+	// CSV downloads (admin)
+	exports := handlers.NewExportHandler(services.NewExportService(
+		repository.NewExportRepository(db), cfg.StoreTimezone))
+	admin("GET /api/admin/exports/orders.csv", exports.Orders)
+	admin("GET /api/admin/exports/customers.csv", exports.Customers)
 
 	// Reviews
 	user("POST /api/products/{id}/reviews", reviews.Create)

@@ -3,14 +3,11 @@ Stock Wise loading screen assets
 These images (PNG, the ones in use converted to WebP) are cropped from the generated loading-screen mockup.
 
 Files:
-- stockwise_logo.png: logo + wordmark crop (transparent background approximation)
 - shopping_cart_illustration.webp: main shopping cart illustration
-- feature_icons.png: truck, shield, and headset feature icons
 - top_left_wave_background.webp: top-left decorative wave (includes its original background)
 - top_right_shopping_bag_watermark.webp: upper-right shopping bag watermark
 - bottom_left_shopping_bag_watermark.webp: lower-left shopping bag watermark
 - bottom_right_wave_background.webp: lower-right decorative wave (includes its original background)
-- center_soft_blob_background.png: soft blob behind the cart
 
 Brand colors:
 - Green: #22C55E

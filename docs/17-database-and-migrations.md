@@ -38,6 +38,7 @@ server) gets exactly the same structure in the same order.
 | 000008 | platform_admins; email_outbox.from_name | the platform super admin, per-store sender names |
 | 000009 | store_domains.verify_token; one main domain per store | custom domains |
 | 000010 | orders.shipping_amount (0 for existing orders); the total check becomes total = subtotal − discount + shipping | shipping fees |
+| 000011 | orders.admin_note (private note, at most 2000 characters) and admin_note_updated_at | order notes for the store's team |
 
 ## 17.3 How the code respects the schema
 

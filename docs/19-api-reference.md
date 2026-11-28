@@ -102,6 +102,9 @@ Reading that file shows the same list with the handler for each line.
 | POST | `/api/orders/{id}/cancel` | U | while pending |
 | GET | `/api/admin/orders`, `/api/admin/orders/{id}` | A | `?status= &payment_method=` |
 | PUT | `/api/admin/orders/{id}/status` | A | `status, payment_collected?` |
+| PUT | `/api/admin/orders/{id}/note` | A | `{note}` (at most 2000 characters, "" clears); admin order responses carry `admin_note`, `admin_note_updated_at`, customer ones never do |
+| GET | `/api/admin/exports/orders.csv` | A | `?from= &to=` (YYYY-MM-DD, store time) `&status= &payment_method=`, a CSV download |
+| GET | `/api/admin/exports/customers.csv` | A | CSV download |
 
 ## Reviews and waiting list
 

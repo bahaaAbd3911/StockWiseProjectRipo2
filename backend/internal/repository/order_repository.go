@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/database"
@@ -29,7 +30,8 @@ const orderColumns = `
 	o.status, o.payment_method, o.payment_status, o.created_at, o.updated_at`
 
 // adminOrderColumns adds the customer (requires JOIN users u).
-const adminOrderColumns = orderColumns + `, u.first_name, u.last_name, u.email`
+// It also adds the admin note, which customer queries never read.
+const adminOrderColumns = orderColumns + `, u.first_name, u.last_name, u.email, o.admin_note, o.admin_note_updated_at`
 
 func scanOrder(s scanner, withCustomer bool) (models.Order, error) {
 	var o models.Order
@@ -38,14 +40,17 @@ func scanOrder(s scanner, withCustomer bool) (models.Order, error) {
 		&o.SubtotalAmount, &o.DiscountAmount, &o.CouponCode, &o.ShippingAmount, &o.TotalAmount,
 		&o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.CreatedAt, &o.UpdatedAt}
 	var c models.OrderCustomer
+	var note string
+	var noteAt *time.Time
 	if withCustomer {
-		dest = append(dest, &c.FirstName, &c.LastName, &c.Email)
+		dest = append(dest, &c.FirstName, &c.LastName, &c.Email, &note, &noteAt)
 	}
 	if err := s.Scan(dest...); err != nil {
 		return o, err
 	}
 	if withCustomer {
 		o.Customer = &c
+		o.AdminNote, o.AdminNoteUpdatedAt = &note, noteAt
 	}
 	o.Items = []models.OrderItem{}
 	o.Bundles = []models.OrderBundle{}
@@ -481,6 +486,21 @@ func (r *OrderRepository) List(ctx context.Context, f models.OrderFilter) (model
 	}
 	page.Items = orders
 	return page, nil
+}
+
+// SetAdminNote replaces the order's private admin note ("" clears it).
+func (r *OrderRepository) SetAdminNote(ctx context.Context, orderID int64, note string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE orders SET admin_note = $2::text,
+		       admin_note_updated_at = CASE WHEN $2::text = '' THEN NULL ELSE NOW() END
+		WHERE id = $1`, orderID, note)
+	if err != nil {
+		return apperr.FromDB(err, "order not found")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return apperr.NotFound("order not found")
+	}
+	return nil
 }
 
 // CancelByUser lets a customer cancel their own order while it is still pending.

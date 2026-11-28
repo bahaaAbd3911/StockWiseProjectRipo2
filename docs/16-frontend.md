@@ -12,7 +12,7 @@
 | `layouts/` | `ClientLayout` (shop routes, the "confirm your email" banner), `AdminLayout` (sidebar, admin-only guard, admin theme) |
 | `Pages/client/` | home, products, product details, cart, checkout, profile with tabs, favorites, orders, and `Sales/` (offers, bundles, my balance, waiting list) |
 | `Pages/admin/` | dashboard, products, categories, orders, users, store settings (including shipping fees), domains, emails, and `Sales/` (coupons, offers, bundles, debts, waiting list) |
-| `Pages/account/` | confirm email and reset password (opened from emails), and `EmailLinks.jsx` (forwards email links) |
+| `Pages/account/` | confirm email and reset password (opened from emails), `EmailLinks.jsx` (forwards email links), and `Invoice.jsx` (`/invoice/{id}`, printable, for customers and admins) |
 | `Pages/platform/` | the platform console: login, stores, store form |
 | `components/client`, `components/common` | shop building blocks: product cards, cart rows, coupon box, header, footer, search bar... |
 | `components/admin/ui/` | the admin UI kit: Button, Card, Modal, ConfirmDialog, FormField, SelectInput, StatCard, StatusBadge, table classes... |
@@ -23,7 +23,7 @@
 
 | File | Contents |
 |---|---|
-| `client.js` | `api(path, options)`: calls `/api` on the **same address**, adds the token, turns error bodies into an `ApiError` (`status`, `message`, `fields`, `retryAfter`), logs out on 401; `fetchAll` (every page of a long list); `upload` (FormData) |
+| `client.js` | `download(path)` saves a file the API generates (CSV exports) with the login token; `api(path, options)`: calls `/api` on the **same address**, adds the token, turns error bodies into an `ApiError` (`status`, `message`, `fields`, `retryAfter`), logs out on 401; `fetchAll` (every page of a long list); `upload` (FormData) |
 | `mappers.js` | converts backend objects (snake_case) into the shapes the components use, and back |
 | `auth.js`, `catalog.js`, `shop.js`, `admin.js`, `domains.js`, `platform.js`, `sales.js` | one function per endpoint, grouped by area |
 

@@ -14,9 +14,9 @@ found, and what was changed.
 | end-to-end tests run five times in a row | pass every time (after the fix in 23.3) |
 | `npm run lint` | clean |
 | `npm run build` | succeeds |
-| `npm audit` | 3 moderate findings, all in `minimatch` inside ESLint: a **development tool only**, not part of what users download. Fix with `npm audit fix` when convenient |
+| `npm audit` | 3 moderate findings in `minimatch` inside ESLint (a development tool). Fixed with `npm audit fix` (2026-11-28): **0 vulnerabilities** |
 | `govulncheck` | now runs in CI on every push. Its first run found **GO-2026-6859** (an HTTP/1 server crash via a `MaxBytesReader` race in Go's `net/http`, which the API uses to cap request sizes). Go 1.27.0–1.27.3 are affected; fixed by moving to **Go 1.27.4** (`go.mod`, `backend/Dockerfile`) |
-| `staticcheck` | **not run**: downloading and running it was blocked in this environment. Run it once yourself: `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` |
+| `staticcheck` | runs in CI on every push (it could not run in this environment) |
 
 ## 23.2 Manual review: what was checked and found sound
 

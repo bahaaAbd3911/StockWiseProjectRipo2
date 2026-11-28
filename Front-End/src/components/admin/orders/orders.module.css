@@ -95,3 +95,15 @@
     padding-top: 8px;
     color: var(--adm-muted);
 }
+
+.noteActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.modalActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 14px;
+}
