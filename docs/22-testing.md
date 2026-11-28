@@ -63,6 +63,7 @@ docker stop sw-race-db && docker network rm sw-race
 | `TestAccountSecurity`, `TestLoginRevocation`, `TestPasswordReset`, `TestRateLimits` | account protection |
 | `TestEmailVerification` | blocked checkout, resend, bad links, then checkout works |
 | `TestOffers`, `TestBundles`, `TestCustomerDebts`, `TestCoupons` | promotions and pay later, including the coupon last-use race |
+| `TestShippingFees` | settings validation, the cart estimate for the default and a chosen city, free over the threshold, the fee charged and kept on the order, the email line |
 | `TestSalesScreens` | **the exact bodies the React sales screens send and every field they read**: coupon / offer / bundle forms, field errors, offers page, bundles in the cart, coupon totals, My Balance, pay-later checkout, statements, payments, corrections, Notify me, waiting lists |
 | `TestOrderNotifications`, `TestEmailDeliveryIsRetried`, `TestDebtNotificationsAndReminders`, `TestBackInStockEmails`, `TestAdminEmailQueue` | emails and the queue |
 | `TestImageUploads`, `TestUploadsArePerStore` | uploads and per-store folders |
@@ -73,7 +74,25 @@ docker stop sw-race-db && docker network rm sw-race
 | `TestStoreContentCustomization`, `TestCustomDomains` | store content and domains |
 | `TestMigrateAdoptsExistingDatabase`, `TestCORSPreflightAndHealth` | tooling |
 
-## 22.4 The latest results
+## 22.4 Continuous integration (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push to `main` or `backend` and on
+every pull request. The result shows as a green tick or red cross next to
+the commit on GitHub.
+
+| Job | What it checks |
+|---|---|
+| Backend (Go) | `gofmt`, `go vet`, every Go test under the race detector, against a throwaway PostgreSQL 18 service |
+| Frontend (React) | `npm ci` (exact locked versions), ESLint, the production build, all on Linux, so an import whose letter case is wrong fails here and not on the server |
+| Go vulnerability scan | `govulncheck`: known vulnerabilities in the Go code's dependencies and standard library |
+| Docker images | both production images build, and the Caddyfile is valid (runs after the first two pass) |
+
+**Why:** a mistake is caught minutes after it is pushed, not when a
+customer finds it. `main` should only receive commits with a green tick.
+On GitHub you can make this required: Settings → Branches → a rule for
+`main` → "Require status checks to pass".
+
+## 22.5 The latest results
 
 - `go vet`: clean.
 - All unit and end-to-end tests pass, five runs in a row.
@@ -83,7 +102,7 @@ docker stop sw-race-db && docker network rm sw-race
 What testing found and fixed is listed in
 [23-security-and-quality-review.md](23-security-and-quality-review.md).
 
-## 22.5 Manual API checklist (Postman or similar)
+## 22.6 Manual API checklist (Postman or similar)
 
 Most of this is automated. Use it when clicking through the API by hand, on
 a test database, never real data.
@@ -120,7 +139,7 @@ a test database, never real data.
   - [ ] favorite twice → 201 then 200
   - [ ] waiting list for an in-stock product → 409
 
-## 22.6 What is not automated
+## 22.7 What is not automated
 
 There are no browser tests: nothing clicks through the React screens
 automatically. `TestSalesScreens` and the other frontend-shape tests check

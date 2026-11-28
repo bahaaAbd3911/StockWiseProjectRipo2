@@ -37,6 +37,7 @@ server) gets exactly the same structure in the same order.
 | 000007 | stores, store_domains; store_id on every table (default = current store); store-aware foreign keys; per-store unique rules (email, category name, coupon code); row-level security; role stockwise_app; existing data = store 1 `main` | many stores in one database |
 | 000008 | platform_admins; email_outbox.from_name | the platform super admin, per-store sender names |
 | 000009 | store_domains.verify_token; one main domain per store | custom domains |
+| 000010 | orders.shipping_amount (0 for existing orders); the total check becomes total = subtotal − discount + shipping | shipping fees |
 
 ## 17.3 How the code respects the schema
 
@@ -48,7 +49,7 @@ server) gets exactly the same structure in the same order.
   friendly 409 messages.
 - **Last safety net:** `CHECK` constraints repeat the important rules
   (discount ranges, scope ⇔ category, debt signs, order total = subtotal −
-  discount), so bad data cannot be stored even by hand.
+  discount + shipping), so bad data cannot be stored even by hand.
 - **`ON DELETE RESTRICT` on orders** is why accounts and products are
   deactivated rather than deleted.
 - **Unique per store, not globally:** since 000007 an email, a category

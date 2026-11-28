@@ -2,14 +2,19 @@ import { api } from "./client";
 import { toCartBundle, toCartItem, toFavoriteProduct, toOrder } from "./mappers";
 
 // The cart: product lines, bundle lines, and what the backend worked out -
-// subtotal, the coupon (with a "problem" when it stopped working), discount, total.
-export const fetchCart = async () => {
-  const c = await api("/api/cart");
+// subtotal, the coupon (with a "problem" when it stopped working), discount,
+// shipping and total. city: the delivery city to estimate shipping for
+// (empty = the customer's default address).
+export const fetchCart = async (city = "") => {
+  const c = await api(city ? `/api/cart?city=${encodeURIComponent(city)}` : "/api/cart");
   return {
     items: (c.items ?? []).map(toCartItem),
     bundles: (c.bundles ?? []).map(toCartBundle),
     subtotal: Number(c.subtotal) || 0,
     discount: Number(c.discount) || 0,
+    shipping: Number(c.shipping) || 0,
+    shippingCity: c.shipping_city ?? "",
+    freeShippingOver: c.free_shipping_over == null ? null : Number(c.free_shipping_over),
     total: Number(c.total) || 0,
     coupon: c.coupon
       ? { code: c.coupon.code, discount: Number(c.coupon.discount_amount) || 0, problem: c.coupon.problem ?? "" }

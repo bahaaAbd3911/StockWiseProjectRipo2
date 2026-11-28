@@ -43,7 +43,9 @@ export function useSettingsDraft() {
     isValid,
     saving,
     isDirty: JSON.stringify(draft) !== JSON.stringify(storeSettings),
-    resetToDefault: () => setDraft(DEFAULT_STORE_SETTINGS),
+    // Resets the look (name, logo, colors, content); shipping fees are a
+    // business setting and are kept.
+    resetToDefault: () => setDraft((prev) => ({ ...DEFAULT_STORE_SETTINGS, shipping: prev.shipping })),
     save,
   };
 }

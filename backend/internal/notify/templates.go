@@ -140,6 +140,27 @@ func (t Templates) orderLines(o models.Order) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// charges explains the total: the coupon (if any) and the delivery fee.
+func (t Templates) charges(o models.Order) (en, ar string) {
+	var e, a []string
+	if o.DiscountAmount.IsPositive() {
+		code := ""
+		if o.CouponCode != nil {
+			code = " " + *o.CouponCode
+		}
+		e = append(e, fmt.Sprintf("Coupon%s: -%s", code, t.money(o.DiscountAmount)))
+		a = append(a, fmt.Sprintf("القسيمة%s: -%s", code, t.money(o.DiscountAmount)))
+	}
+	if o.ShippingAmount.IsPositive() {
+		e = append(e, "Shipping: "+t.money(o.ShippingAmount))
+		a = append(a, "التوصيل: "+t.money(o.ShippingAmount))
+	} else {
+		e = append(e, "Shipping: free")
+		a = append(a, "التوصيل: مجاني")
+	}
+	return strings.Join(e, "\n"), strings.Join(a, "\n")
+}
+
 func payLater(o models.Order) (en, ar string) {
 	if o.PaymentMethod == models.PaymentPayLater {
 		return "Payment: pay later (added to your account balance)", "الدفع: لاحقاً (أضيف المبلغ إلى رصيد حسابك)"
@@ -149,6 +170,7 @@ func payLater(o models.Order) (en, ar string) {
 
 func (t Templates) OrderPlaced(to Recipient, o models.Order) mail.Message {
 	payEn, payAr := payLater(o)
+	chargesEn, chargesAr := t.charges(o)
 	lines := t.orderLines(o)
 	link := t.link(fmt.Sprintf("/orders/%d", o.ID))
 	return t.compose(to, fmt.Sprintf("Order #%d received", o.ID), fmt.Sprintf("تم استلام الطلب رقم %d", o.ID),
@@ -156,20 +178,22 @@ func (t Templates) OrderPlaced(to Recipient, o models.Order) mail.Message {
 
 %s
 
+%s
 Total: %s
 %s
 Delivery to: %s, %s, %s
 
-Follow your order: %s`, o.ID, lines, t.money(o.TotalAmount), payEn, o.Street, o.Area, o.City, link),
+Follow your order: %s`, o.ID, lines, chargesEn, t.money(o.TotalAmount), payEn, o.Street, o.Area, o.City, link),
 		fmt.Sprintf(`شكراً لطلبك! استلمنا الطلب رقم %d وسنؤكده قريباً.
 
 %s
 
+%s
 المجموع: %s
 %s
 التوصيل إلى: %s، %s، %s
 
-تابع طلبك: %s`, o.ID, lines, t.money(o.TotalAmount), payAr, o.Street, o.Area, o.City, link))
+تابع طلبك: %s`, o.ID, lines, chargesAr, t.money(o.TotalAmount), payAr, o.Street, o.Area, o.City, link))
 }
 
 var statusText = map[string][2]string{

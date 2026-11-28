@@ -18,7 +18,8 @@ func NewCartHandler(carts *services.CartService) *CartHandler { return &CartHand
 
 // Get: GET /api/cart
 func (h *CartHandler) Get(w http.ResponseWriter, r *http.Request) error {
-	cart, err := h.carts.Get(r.Context(), auth.UserID(r.Context()))
+	// ?city= estimates shipping for that delivery city (checkout page).
+	cart, err := h.carts.Get(r.Context(), auth.UserID(r.Context()), r.URL.Query().Get("city"))
 	if err != nil {
 		return err
 	}

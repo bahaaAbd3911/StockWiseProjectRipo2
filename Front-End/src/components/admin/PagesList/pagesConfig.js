@@ -11,6 +11,7 @@ import {
   faBoxesStacked,
   faWallet,
   faBell,
+  faEnvelope,
 } from "@fortawesome/free-solid-svg-icons";
 
 export const translations = {
@@ -25,6 +26,7 @@ export const translations = {
     bundles: "Bundles",
     debts: "Customer Debts",
     waiting: "Waiting List",
+    emails: "Emails",
     website: "WEBSITE",
     settings: "Store Settings",
     domains: "Domains",
@@ -41,6 +43,7 @@ export const translations = {
     bundles: "الباقات",
     debts: "ديون العملاء",
     waiting: "قائمة الانتظار",
+    emails: "رسائل البريد",
     website: "إعدادات الموقع",
     settings: "إعدادات المتجر",
     domains: "النطاقات",
@@ -60,6 +63,7 @@ export const mainPages = [
   { key: "bundles", path: "/admin/bundles", icon: faBoxesStacked },
   { key: "debts", path: "/admin/debts", icon: faWallet },
   { key: "waiting", path: "/admin/waiting-list", icon: faBell },
+  { key: "emails", path: "/admin/emails", icon: faEnvelope },
 ];
 
 export const websitePages = [

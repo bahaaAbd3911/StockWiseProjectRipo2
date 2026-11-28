@@ -152,3 +152,14 @@ short:
 - the admin panel split out of the shoppers' download (824 KB → 582 KB);
 - the images compressed (9.0 MB → 0.55 MB; the whole build 10.7 MB → 1.7 MB);
 - every test passes, also under Go's race detector.
+
+## Step 11: shipping fees, the Emails page and CI
+
+- **Shipping fees** (migration 000010): each store sets a standard fee,
+  per-city fees and a "free from" amount. The backend charges the fee at
+  checkout, the cart shows the same fee, and orders keep a copy. See
+  [10-cart-checkout-orders.md](10-cart-checkout-orders.md) §10.3.
+- **An Emails page for store admins:** it shows whether emails go out, and
+  failed emails can be retried. See [13-emails.md](13-emails.md) §13.5.
+- **GitHub CI:** every push runs the tests, lint, build, a vulnerability
+  scan and the Docker builds. See [22-testing.md](22-testing.md) §22.4.

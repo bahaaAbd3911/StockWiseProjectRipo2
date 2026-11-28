@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"ecommerce-backend/internal/apperr"
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/repository"
@@ -76,6 +78,7 @@ func (s *SettingsService) Save(ctx context.Context, in models.StoreSettings) (mo
 		}
 	}
 	checkContent(c, in.Content)
+	checkShipping(c, in.Shipping)
 	if err := c.Err(); err != nil {
 		return models.StoreSettings{}, err
 	}
@@ -115,6 +118,44 @@ func (s *SettingsService) deleteUnused(ctx context.Context, before, after []stri
 				slog.Error("delete unused banner image", "error", err)
 			}
 		}
+	}
+}
+
+// Limits for the shipping settings: a delivery fee is a small amount, and a
+// store lists a handful of cities.
+const (
+	maxShippingCities = 50
+	maxShippingFee    = 1000
+)
+
+// checkShipping validates (and tidies) the shipping settings: fees between 0
+// and 1000 with 2 decimals, a positive "free over" amount, and each city at
+// most once.
+func checkShipping(c *validators.Checker, in *models.ShippingSettings) {
+	if in == nil {
+		return
+	}
+	maxFee := decimal.NewFromInt(maxShippingFee)
+	fee := func(field string, v decimal.Decimal) {
+		c.Money(field, v)
+		c.Add(v.LessThanOrEqual(maxFee), field, "must be at most 1000")
+	}
+	fee("shipping.fee", in.Fee)
+	if in.FreeOver != nil {
+		c.Money("shipping.freeOver", *in.FreeOver)
+		c.Add(in.FreeOver.IsPositive(), "shipping.freeOver", "must be more than 0 (or empty for never)")
+	}
+	c.Add(len(in.Cities) <= maxShippingCities, "shipping.cities", "too many cities (maximum 50)")
+	seen := map[string]bool{}
+	for i := range in.Cities {
+		city := &in.Cities[i]
+		city.City = strings.TrimSpace(city.City)
+		c.Add(city.City != "", "shipping.cities", "every city needs a name")
+		c.MaxLen("shipping.cities", city.City, 100)
+		key := strings.ToLower(city.City)
+		c.Add(!seen[key], "shipping.cities", city.City+" is listed twice")
+		seen[key] = true
+		fee("shipping.cities", city.Fee)
 	}
 }
 

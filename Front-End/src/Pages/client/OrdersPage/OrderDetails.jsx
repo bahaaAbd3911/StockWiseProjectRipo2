@@ -25,6 +25,24 @@ export default function OrderDetails({ order }) {
         </div>
       ))}
 
+      {(order.discount > 0 || order.shipping > 0) && (
+        <div className={styles.orderMetaClass}>
+          <span>
+            {tr("Subtotal", "المجموع الفرعي")}: {formatMoney(order.subtotal)}
+          </span>
+          {order.discount > 0 && (
+            <span>
+              {tr("Coupon", "القسيمة")}
+              {order.couponCode ? ` ${order.couponCode}` : ""}: −{formatMoney(order.discount)}
+            </span>
+          )}
+          <span>
+            <i className="fa-solid fa-truck"></i> {tr("Shipping", "الشحن")}:{" "}
+            {order.shipping > 0 ? formatMoney(order.shipping) : tr("Free", "مجاني")}
+          </span>
+        </div>
+      )}
+
       <div className={styles.orderMetaClass}>
         <span>
           <i className="fa-solid fa-location-dot"></i> {order.recipientName} — {order.address}

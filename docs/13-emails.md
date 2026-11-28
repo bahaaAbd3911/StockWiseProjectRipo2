@@ -76,10 +76,24 @@ moment, the user simply asks again.
 | `POST /api/admin/emails/retry-failed` | the same for every failed email |
 | `DELETE /api/admin/emails/{id}` | cancel an unsent email |
 
-Sent emails cannot be retried or cancelled (409). There is no admin screen
-for the queue yet ([25](25-limits-and-next-steps.md)).
+Sent emails cannot be retried or cancelled (409).
 
-## 13.5 Sending
+## 13.5 The Emails admin page
+
+Admin → **Emails** uses these endpoints:
+
+- **The health of the queue at a glance:** sent in the last 24 hours,
+  waiting to send, failed.
+- **A red warning when emails are not going out.** It shows when emails
+  have failed, or when the oldest waiting email is more than 15 minutes old.
+  The warning explains the usual cause: the server's SMTP settings, or the
+  provider being down.
+- **"Retry N failed"** sends every failed email again.
+- **The list:** filter by status and type, search by address, 20 per page.
+- **One email:** click a row to read its full text and its last error, then
+  **Send now** or **Cancel** while it is not sent.
+
+## 13.6 Sending
 
 | `MAIL_DRIVER` | What happens |
 |---|---|

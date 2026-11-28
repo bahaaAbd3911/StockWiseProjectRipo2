@@ -12,14 +12,34 @@ import {
   counterClass,
 } from "./OrderSummery.module.css";
 
+import { useContext, useEffect } from "react";
+
+import { AuthContext } from "../../../../context/AuthContext";
 import { useShop } from "../../../../hooks/useShop";
 import { useLang } from "../../../../hooks/useLang";
 import { formatMoney } from "../../../../utils/format";
+import ShippingLine from "../../../../components/client/Cart/ShippingLine";
 
 // Right-hand summary on the checkout page, built from the real cart.
 function OrderSummery() {
-  const { cart, cartInfo, cartCount, updateCartQuantity, removeFromCart, updateBundleQuantity, removeBundle } = useShop();
+  const {
+    cart,
+    cartInfo,
+    cartCount,
+    updateCartQuantity,
+    removeFromCart,
+    updateBundleQuantity,
+    removeBundle,
+    setShippingCity,
+  } = useShop();
   const { tr, isAr } = useLang();
+  const { orderFormFields } = useContext(AuthContext);
+  const city = orderFormFields[3].data; // checkout field 3 = city
+
+  // Shipping depends on the delivery city: ask the backend again when it changes.
+  useEffect(() => {
+    setShippingCity(city).catch(() => {});
+  }, [city, setShippingCity]);
 
   return (
     <div className={OrderSummeryContainerClass}>
@@ -51,7 +71,11 @@ function OrderSummery() {
                 <div
                   role="button"
                   aria-label={tr("Decrease", "إنقاص")}
-                  onClick={() => (item.quantity > 1 ? updateCartQuantity(item.id, item.quantity - 1) : removeFromCart(item.id))}
+                  onClick={() =>
+                    item.quantity > 1
+                      ? updateCartQuantity(item.id, item.quantity - 1)
+                      : removeFromCart(item.id)
+                  }
                 >
                   −
                 </div>
@@ -59,7 +83,10 @@ function OrderSummery() {
                 <div
                   role="button"
                   aria-label={tr("Increase", "زيادة")}
-                  onClick={() => item.quantity < item.stock && updateCartQuantity(item.id, item.quantity + 1)}
+                  onClick={() =>
+                    item.quantity < item.stock &&
+                    updateCartQuantity(item.id, item.quantity + 1)
+                  }
                 >
                   +
                 </div>
@@ -71,7 +98,11 @@ function OrderSummery() {
           <div className={productClass} key={`bundle-${b.id}`}>
             <div>
               <div className={productImageClass}>
-                {b.image ? <img src={b.image} alt="" style={{ objectFit: "cover" }} /> : <i className="fa-solid fa-boxes-stacked"></i>}
+                {b.image ? (
+                  <img src={b.image} alt="" style={{ objectFit: "cover" }} />
+                ) : (
+                  <i className="fa-solid fa-boxes-stacked"></i>
+                )}
               </div>
               <div className={productInfoClass}>
                 <div>{isAr ? b.nameAr || b.name : b.name}</div>
@@ -84,12 +115,20 @@ function OrderSummery() {
                 <div
                   role="button"
                   aria-label={tr("Decrease", "إنقاص")}
-                  onClick={() => (b.quantity > 1 ? updateBundleQuantity(b.id, b.quantity - 1) : removeBundle(b.id))}
+                  onClick={() =>
+                    b.quantity > 1
+                      ? updateBundleQuantity(b.id, b.quantity - 1)
+                      : removeBundle(b.id)
+                  }
                 >
                   −
                 </div>
                 <div>{b.quantity}</div>
-                <div role="button" aria-label={tr("Increase", "زيادة")} onClick={() => updateBundleQuantity(b.id, b.quantity + 1)}>
+                <div
+                  role="button"
+                  aria-label={tr("Increase", "زيادة")}
+                  onClick={() => updateBundleQuantity(b.id, b.quantity + 1)}
+                >
                   +
                 </div>
               </div>
@@ -112,10 +151,12 @@ function OrderSummery() {
             <div>−{formatMoney(cartInfo.discount)}</div>
           </div>
         )}
-        <div className={costClass}>
-          <div>{tr("Shipping Fee", "رسوم الشحن")}</div>
-          <div>{tr("Free", "مجاني")}</div>
-        </div>
+        <ShippingLine
+          cartInfo={cartInfo}
+          rowClass={costClass}
+          cell="div"
+          label={tr("Shipping Fee", "رسوم الشحن")}
+        />
       </div>
       <div className={TotalClass}>
         <div>{tr("Total", "الإجمالي")}</div>

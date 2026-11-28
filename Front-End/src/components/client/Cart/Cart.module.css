@@ -249,3 +249,8 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.hint {
+    color: var(--color-primary);
+    font-size: 13px;
+}

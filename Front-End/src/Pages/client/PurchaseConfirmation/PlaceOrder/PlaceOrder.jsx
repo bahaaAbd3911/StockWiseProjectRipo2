@@ -62,6 +62,7 @@ function PlaceOrder({ setSelectedStage }) {
             [tr("Items", "العناصر"), cartCount],
             ...(cartInfo.coupon ? [[tr("Coupon", "القسيمة"), cartInfo.coupon.code]] : []),
             ...(cartInfo.discount > 0 ? [[tr("Discount", "الخصم"), `−${formatMoney(cartInfo.discount)}`]] : []),
+            [tr("Shipping", "الشحن"), cartInfo.shipping > 0 ? formatMoney(cartInfo.shipping) : tr("Free", "مجاني")],
             [tr("Total", "الإجمالي"), formatMoney(total)],
           ]}
         />

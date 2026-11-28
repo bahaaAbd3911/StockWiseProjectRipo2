@@ -1,5 +1,7 @@
 package models
 
+import "github.com/shopspring/decimal"
+
 // StoreSettings is what a store's admin edits in Store Settings: the store's
 // name, its logo, the theme colors, and the content of its pages. The keys are
 // the frontend's own (camelCase), because the frontend owns this format; the
@@ -16,6 +18,27 @@ type StoreSettings struct {
 	// Content: texts and images of the store's pages. Anything left out uses
 	// the frontend's defaults, so a new store looks complete from the start.
 	Content *StoreContent `json:"content,omitempty"`
+	// Shipping: what delivery costs. Left out = free shipping (the behaviour
+	// before shipping fees existed).
+	Shipping *ShippingSettings `json:"shipping,omitempty"`
+}
+
+// ShippingSettings: one fee per order, optionally different per city, and
+// optionally free above an amount. The fee is decided by the backend at
+// checkout from the delivery city (pricing.ShippingFee).
+type ShippingSettings struct {
+	Fee decimal.Decimal `json:"fee"` // the standard fee for one order
+	// FreeOver: orders whose items cost at least this much (after the
+	// coupon) ship free. Null = never free.
+	FreeOver *decimal.Decimal `json:"freeOver"`
+	// Cities with their own fee (e.g. Amman 2.00, everything else the
+	// standard fee). Matched to the delivery address's city, ignoring case.
+	Cities []CityShipping `json:"cities"`
+}
+
+type CityShipping struct {
+	City string          `json:"city"`
+	Fee  decimal.Decimal `json:"fee"`
 }
 
 // StoreContent is the customisable content of the shop's pages (English and

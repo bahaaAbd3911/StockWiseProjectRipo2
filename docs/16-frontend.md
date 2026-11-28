@@ -11,7 +11,7 @@
 | `hooks/` | reusable logic: `useLang` (language + `tr(en, ar)`), `useToast`, `useApiAction` (busy + toasts), `useShop`, `useCatalog`, `useStoreContent`, `useStoreTheme`, `usePagination`, `useFilters` ... |
 | `layouts/` | `ClientLayout` (shop routes, the "confirm your email" banner), `AdminLayout` (sidebar, admin-only guard, admin theme) |
 | `Pages/client/` | home, products, product details, cart, checkout, profile with tabs, favorites, orders, and `Sales/` (offers, bundles, my balance, waiting list) |
-| `Pages/admin/` | dashboard, products, categories, orders, users, store settings, domains, and `Sales/` (coupons, offers, bundles, debts, waiting list) |
+| `Pages/admin/` | dashboard, products, categories, orders, users, store settings (including shipping fees), domains, emails, and `Sales/` (coupons, offers, bundles, debts, waiting list) |
 | `Pages/account/` | confirm email and reset password (opened from emails), and `EmailLinks.jsx` (forwards email links) |
 | `Pages/platform/` | the platform console: login, stores, store form |
 | `components/client`, `components/common` | shop building blocks: product cards, cart rows, coupon box, header, footer, search bar... |
@@ -49,7 +49,7 @@ server and **keeps the host name** (`changeOrigin: false`), so
 | `AuthProvider` | the session (user, token, sign in/out), language, theme, toast messages, profile tabs, checkout form |
 | `StoreProvider` | this store's settings: name, logo, colors (applied as CSS variables), page content |
 | `CatalogProvider` | products and categories; `reload()` after admin changes or orders |
-| `ShopProvider` | the signed-in customer's cart (`cart` = product lines; `cartInfo` = bundle lines, coupon, subtotal, discount, total), favorites and orders, plus every cart action |
+| `ShopProvider` | the signed-in customer's cart (`cart` = product lines; `cartInfo` = bundle lines, coupon, subtotal, discount, shipping, total), favorites and orders, plus every cart action; `setShippingCity(city)` makes every later cart refresh estimate shipping for that city (the checkout calls it when the customer picks a city) |
 
 All cart actions go through `ShopProvider`:
 

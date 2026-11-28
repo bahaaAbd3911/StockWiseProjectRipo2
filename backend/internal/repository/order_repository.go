@@ -25,7 +25,7 @@ func NewOrderRepository(db *sql.DB) *OrderRepository { return &OrderRepository{d
 const orderColumns = `
 	o.id, o.user_id, o.address_id, o.recipient_name, o.phone, o.city, o.area, o.street,
 	o.building_number, o.apartment_number, o.additional_instructions,
-	o.subtotal_amount, o.discount_amount, o.coupon_code, o.total_amount,
+	o.subtotal_amount, o.discount_amount, o.coupon_code, o.shipping_amount, o.total_amount,
 	o.status, o.payment_method, o.payment_status, o.created_at, o.updated_at`
 
 // adminOrderColumns adds the customer (requires JOIN users u).
@@ -35,7 +35,7 @@ func scanOrder(s scanner, withCustomer bool) (models.Order, error) {
 	var o models.Order
 	dest := []any{&o.ID, &o.UserID, &o.AddressID, &o.RecipientName, &o.Phone, &o.City, &o.Area, &o.Street,
 		&o.BuildingNumber, &o.ApartmentNumber, &o.AdditionalInstructions,
-		&o.SubtotalAmount, &o.DiscountAmount, &o.CouponCode, &o.TotalAmount,
+		&o.SubtotalAmount, &o.DiscountAmount, &o.CouponCode, &o.ShippingAmount, &o.TotalAmount,
 		&o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.CreatedAt, &o.UpdatedAt}
 	var c models.OrderCustomer
 	if withCustomer {
@@ -175,7 +175,12 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 			}
 			discount, coupon = d, &c
 		}
-		total := subtotal.Sub(discount)
+		// Shipping for the delivery city, with the rule the cart shows.
+		shipping, _, err := shippingFor(ctx, tx, addr.City, subtotal.Sub(discount))
+		if err != nil {
+			return err
+		}
+		total := subtotal.Sub(discount).Add(shipping)
 
 		paymentStatus := models.PaymentPending
 		if method == models.PaymentPayLater {
@@ -193,13 +198,13 @@ func (r *OrderRepository) Checkout(ctx context.Context, userID int64, addressID 
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO orders (user_id, address_id, recipient_name, phone, city, area, street,
 			                    building_number, apartment_number, additional_instructions,
-			                    subtotal_amount, discount_amount, total_amount, coupon_id, coupon_code,
+			                    subtotal_amount, discount_amount, shipping_amount, total_amount, coupon_id, coupon_code,
 			                    status, payment_method, payment_status)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 			RETURNING id`,
 			userID, addr.ID, addr.RecipientName, addr.Phone, addr.City, addr.Area, addr.Street,
 			addr.BuildingNumber, addr.ApartmentNumber, addr.AdditionalInstructions,
-			subtotal, discount, total, couponRef, couponCode,
+			subtotal, discount, shipping, total, couponRef, couponCode,
 			models.OrderPending, method, paymentStatus,
 		).Scan(&orderID); err != nil {
 			return err

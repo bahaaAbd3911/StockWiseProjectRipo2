@@ -131,6 +131,7 @@ export const toOrder = (o) => {
     status: o.status,
     subtotal: num(o.subtotal_amount ?? o.total_amount),
     discount: num(o.discount_amount),
+    shipping: num(o.shipping_amount),
     couponCode: o.coupon_code ?? null,
     total: num(o.total_amount),
     createdAt: o.created_at,

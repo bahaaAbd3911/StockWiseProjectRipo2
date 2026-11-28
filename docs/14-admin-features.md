@@ -15,7 +15,8 @@ holds these pages:
 | Bundles | product sets | [09](09-prices-offers-coupons-bundles.md) |
 | Customer Debts | credit limits, payments, statements | [11](11-pay-later-and-debts.md) |
 | Waiting List | who waits for what | [12](12-reviews-favorites-addresses-waiting-list.md) |
-| Store Settings | the store's look and content | 14.3 |
+| Emails | whether emails go out; retry or cancel them | [13](13-emails.md) |
+| Store Settings | the store's look and content, and shipping fees | 14.3, [10](10-cart-checkout-orders.md) |
 | Domains | custom domains | 14.4 |
 
 ## 14.1 The dashboard
@@ -91,6 +92,11 @@ variables, so the whole theme changes without touching any component.
 - colors must be hex colors.
 
 Replacing a banner image deletes the old file.
+
+The same page has a **Shipping** card: the standard fee, cities with their
+own fee (picked from the checkout's city list, so the names always match),
+and "free shipping from". "Reset to default" resets the look only and keeps
+the shipping fees. The rules are in [10-cart-checkout-orders.md](10-cart-checkout-orders.md) §10.3.
 
 ## 14.4 Custom domains
 

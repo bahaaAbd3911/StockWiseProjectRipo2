@@ -11,7 +11,8 @@ accounts. The steps are in [21-deployment-and-operations.md](21-deployment-and-o
 - [ ] Fill in `.env.production`.
 - [ ] Configure backups off the server (`BACKUP_REMOTE`) and a monitoring
       check.
-- [ ] Run `govulncheck` and `staticcheck` once ([23](23-security-and-quality-review.md)).
+- [ ] Check the first CI run on GitHub (Actions tab): it includes `govulncheck`.
+      Run `staticcheck` once too ([23](23-security-and-quality-review.md)).
 - [ ] Open the shop in a browser and check the developer console for
       Content-Security-Policy errors.
 
@@ -19,9 +20,9 @@ accounts. The steps are in [21-deployment-and-operations.md](21-deployment-and-o
 
 | Item | Why |
 |---|---|
-| An admin "Emails" page | the email-queue endpoints exist but have no screen |
 | `npm audit fix` | development-tool warnings |
-| Browser tests (e.g. Playwright) for the main flows | the API side of every screen is tested, the clicking is not |
+| Browser tests (e.g. Playwright) for the main flows | the API side of every screen is tested, the clicking is not; they would run in the same CI |
+| Make the CI check required for `main` | GitHub → Settings → Branches; then a red cross blocks merging |
 
 ## When the platform grows
 

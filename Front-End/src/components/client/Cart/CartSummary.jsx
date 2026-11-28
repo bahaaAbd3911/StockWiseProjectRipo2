@@ -4,6 +4,7 @@ import { useShop } from "../../../hooks/useShop";
 import { useLang } from "../../../hooks/useLang";
 import { formatMoney } from "../../../utils/format";
 import CouponBox from "./CouponBox";
+import ShippingLine from "./ShippingLine";
 import styles from "./Cart.module.css";
 
 // Totals come from the backend (bundles, offers and the coupon are all counted there).
@@ -25,10 +26,7 @@ export default function CartSummary() {
           <span className={styles.saving}>−{formatMoney(cartInfo.discount)}</span>
         </div>
       )}
-      <div className={styles.line}>
-        <span>{tr("Shipping", "الشحن")}</span>
-        <span>{tr("Free", "مجاني")}</span>
-      </div>
+      <ShippingLine cartInfo={cartInfo} rowClass={styles.line} hintClass={styles.hint} />
       <CouponBox />
       <div className={styles.total}>
         <span>{tr("Total", "الإجمالي")}</span>

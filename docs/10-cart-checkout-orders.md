@@ -9,13 +9,13 @@
 - **Every cart response is live:**
   - each line: current price, line total, `is_available` and
     `unavailable_reason`;
-  - for the whole cart: `subtotal`, the `coupon` (if any), `discount` and
-    `total`.
+  - for the whole cart: `subtotal`, the `coupon` (if any), `discount`,
+    `shipping` and `total`.
 - **Availability uses the same rule as checkout** (`cartLine.problem`). The
   cart never promises something checkout will refuse.
 
 **The frontend uses the backend's totals.** The cart summary, the checkout
-summary and the "Place order" button show `subtotal`, `discount` and `total`
+summary and the "Place order" button show `subtotal`, `discount`, `shipping` and `total`
 exactly as the backend computed them. They are not re-added in the browser,
 because offers, bundles and coupons are only known correctly on the server.
 
@@ -36,11 +36,12 @@ nothing:
 6. **Prices**: `pricing.BestPrice` for products, the bundle price for
    bundles.
 7. **Coupon**: re-checked with its row locked; the discount is computed.
-8. **Pay later**: balance + total must fit the credit limit.
-9. **Insert the order**, with copies of the address, names, prices, colors
+8. **Shipping**: the fee for the delivery address's city (10.3).
+9. **Pay later**: balance + total (shipping included) must fit the credit limit.
+10. **Insert the order**, with copies of the address, names, prices, colors
    and offer. Reduce stock once per product, add a debt `charge` for pay
    later, and record the coupon use.
-10. **Empty the cart and commit.** Then queue the "order received" email.
+11. **Empty the cart and commit.** Then queue the "order received" email.
 
 **Why one transaction with locks?** Without locks, two customers can both
 read "1 left" and both buy it. The test `TestLastUnitCanOnlyBeSoldOnce` fires
@@ -48,7 +49,54 @@ two checkouts at the same instant for the last unit; exactly one succeeds.
 
 Checkout needs a **confirmed email** ([07](07-accounts-and-security.md)).
 
-## 10.3 Payment methods
+## 10.3 Shipping fees
+
+Each store decides what delivery costs, in **Store Settings → Shipping**:
+
+| Setting | Meaning |
+|---|---|
+| standard fee | what one order costs to deliver |
+| cities with their own fee | e.g. Amman 2.00 while every other city pays the standard fee |
+| free shipping from | orders whose items reach this amount (after the coupon) ship free |
+
+A store that never sets shipping keeps **free shipping**, which is how
+every store worked before this feature existed.
+
+**The backend decides the fee.** One function, `pricing.ShippingFee`, gives
+the fee for a city and an amount, using these steps in order:
+
+1. no shipping settings → free;
+2. items total (after the coupon) ≥ "free from" → free;
+3. the city has its own fee → that fee (names compared ignoring case);
+4. otherwise → the standard fee.
+
+It is used in two places:
+
+- **The cart** (`GET /api/cart?city=`) shows the fee for the city the
+  checkout page names. Without `?city=` it uses the customer's default
+  address, and without one the standard fee. The cart also returns
+  `free_shipping_over`, so the page can say "add 3.00 more for free
+  shipping".
+- **Checkout** charges the fee for the order's real delivery city, inside
+  the checkout transaction.
+
+Because both use the same function, the price shown is the price paid. The
+browser only displays the fee; it never sends one, so it cannot be changed
+by editing a request.
+
+**The order keeps a copy** in `shipping_amount` (migration 000010), and the
+database enforces `total = subtotal − discount + shipping`. Changing the
+fees later never changes past orders.
+
+Where shipping appears:
+
+- **Shopping:** the cart summary and checkout summary, which update when the
+  customer picks a city, and the review step.
+- **After ordering:** the order details (customer and admin), the
+  "Order received" email, pay-later credit checks (the charge includes
+  shipping) and dashboard revenue.
+
+## 10.4 Payment methods
 
 | `payment_method` | Meaning |
 |---|---|
@@ -59,7 +107,7 @@ On the checkout screen, "Pay Later" only appears for customers the store
 gave a credit limit, and it is greyed out when the order is larger than the
 available credit. The backend checks again either way.
 
-## 10.4 The order life cycle
+## 10.5 The order life cycle
 
 ```
 pending → confirmed → processing → shipped → delivered
@@ -79,7 +127,7 @@ pending → confirmed → processing → shipped → delivered
 
 The customer gets an email at every step ([13](13-emails.md)).
 
-## 10.5 Why orders keep copies
+## 10.6 Why orders keep copies
 
 An order stores the product names, prices, colors, the offer name, the
 coupon code and the delivery address **as they were at checkout**. Renaming

@@ -7,6 +7,7 @@ import LogoCard from "./components/LogoCard";
 import StoreNameCard from "./components/StoreNameCard";
 import ColorsCard from "./components/ColorsCard";
 import ContentCard from "./components/ContentCard";
+import ShippingCard from "./components/ShippingCard";
 import LivePreview from "./components/LivePreview";
 import SettingsFooter from "./components/SettingsFooter";
 import styles from "./StoreSettings.module.css";
@@ -23,7 +24,7 @@ export default function StoreSettings() {
       <PageHeader
         icon="fa-solid fa-gear"
         title={tr("Store Settings", "إعدادات المتجر")}
-        subtitle={tr("Customize your store's name, logo and colors.", "خصّص اسم متجرك وشعاره وألوانه.")}
+        subtitle={tr("Customize your store's name, logo, colors, pages and shipping.", "خصّص اسم متجرك وشعاره وألوانه وصفحاته والشحن.")}
       />
 
       <div className={styles.layout}>
@@ -34,6 +35,7 @@ export default function StoreSettings() {
           </div>
           <ColorsCard colors={draft.colors} mode={mode} onModeChange={setMode} onColor={settings.setColor} tr={tr} />
           <ContentCard content={draft.content} onChange={(v) => settings.setField("content", v)} tr={tr} />
+          <ShippingCard shipping={draft.shipping} onChange={(v) => settings.setField("shipping", v)} tr={tr} />
         </div>
 
         <LivePreview settings={draft} mode={mode} tr={tr} />

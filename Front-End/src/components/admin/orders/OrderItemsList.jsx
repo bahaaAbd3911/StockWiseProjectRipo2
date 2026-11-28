@@ -21,6 +21,27 @@ export default function OrderItemsList({ order, isAr, tr }) {
         </div>
       ))}
 
+      {(order.discount > 0 || order.shipping > 0) && (
+        <>
+          <div className={styles.charge}>
+            <span>{tr("Subtotal", "المجموع الفرعي")}</span>
+            <span>{formatMoney(order.subtotal)}</span>
+          </div>
+          {order.discount > 0 && (
+            <div className={styles.charge}>
+              <span>
+                {tr("Coupon", "القسيمة")}
+                {order.couponCode ? ` ${order.couponCode}` : ""}
+              </span>
+              <span>−{formatMoney(order.discount)}</span>
+            </div>
+          )}
+          <div className={styles.charge}>
+            <span>{tr("Shipping", "الشحن")}</span>
+            <span>{order.shipping > 0 ? formatMoney(order.shipping) : tr("Free", "مجاني")}</span>
+          </div>
+        </>
+      )}
       <div className={styles.total}>
         <span>{tr("Total", "المجموع")}</span>
         <span>{formatMoney(orderTotal(order))}</span>

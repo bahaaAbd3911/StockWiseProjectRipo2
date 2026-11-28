@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"strings"
+	"unicode/utf8"
 
 	"ecommerce-backend/internal/models"
 	"ecommerce-backend/internal/repository"
@@ -16,8 +18,13 @@ type CartService struct {
 
 func NewCartService(carts *repository.CartRepository) *CartService { return &CartService{carts: carts} }
 
-func (s *CartService) Get(ctx context.Context, userID int64) (models.Cart, error) {
-	return s.carts.Get(ctx, userID)
+// Get returns the cart; city ("" = the default address) decides the shipping estimate.
+func (s *CartService) Get(ctx context.Context, userID int64, city string) (models.Cart, error) {
+	city = strings.TrimSpace(city)
+	if utf8.RuneCountInString(city) > 100 {
+		return models.Cart{}, validators.FieldError("city", "is too long (maximum 100 characters)")
+	}
+	return s.carts.GetForCity(ctx, userID, city)
 }
 
 func (s *CartService) AddItem(ctx context.Context, userID int64, req models.AddCartItemRequest) (models.Cart, error) {

@@ -80,7 +80,7 @@ Reading that file shows the same list with the handler for each line.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET / DELETE | `/api/cart` | U | `{items, bundles, subtotal, coupon, discount, total, item_count, ...}`; DELETE empties it |
+| GET / DELETE | `/api/cart` | U | `?city=` (shipping estimate for that city; default: the default address) → `{items, bundles, subtotal, coupon, discount, shipping, shipping_city, free_shipping_over, total, item_count, ...}`; DELETE empties it |
 | POST | `/api/cart/items` | U | `product_id, quantity?, selected_color?` |
 | PUT / DELETE | `/api/cart/items/{id}` | U | PUT `{quantity}` |
 | POST | `/api/cart/bundles` | U | `bundle_id, quantity?` → the cart |
@@ -97,7 +97,7 @@ Reading that file shows the same list with the handler for each line.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/api/orders` | V | `address_id?, payment_method? (cash_on_delivery \| pay_later)` |
+| POST | `/api/orders` | V | `address_id?, payment_method? (cash_on_delivery \| pay_later)`; orders carry `subtotal_amount`, `discount_amount`, `shipping_amount`, `total_amount` |
 | GET | `/api/orders`, `/api/orders/{id}` | U | your own only |
 | POST | `/api/orders/{id}/cancel` | U | while pending |
 | GET | `/api/admin/orders`, `/api/admin/orders/{id}` | A | `?status= &payment_method=` |
@@ -148,7 +148,7 @@ Reading that file shows the same list with the handler for each line.
 | GET | `/api/admin/dashboard` | A | `?days=` (1–366, default 30) |
 | GET / POST | `/api/admin/users` | A | GET `?search= &role=`; POST `{first_name, last_name, email, phone?, password, role?, is_active?}` |
 | GET / PUT / DELETE | `/api/admin/users/{id}` | A | GET `{user, orders, favorites}`; empty password keeps it; safety rules in [14](14-admin-features.md) |
-| PUT | `/api/admin/settings` | A | `{storeName, logo, colors: {light, dark}, content: {hero, productsBanner, features, footer}}` |
+| PUT | `/api/admin/settings` | A | `{storeName, logo, colors: {light, dark}, content: {hero, productsBanner, features, footer}, shipping: {fee, freeOver, cities: [{city, fee}]}}`; `shipping` null or left out = free shipping; fees 0–1000 |
 | POST | `/api/admin/settings/images` | A | multipart `image` → `{url}` |
 | GET / POST | `/api/admin/domains` | A | POST `{domain}` → the domain with `dns: {txt_name, txt_value, cname_target}` |
 | POST | `/api/admin/domains/{id}/verify`, `/primary` | A | |

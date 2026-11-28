@@ -36,6 +36,7 @@ const Offers = lazy(() => import("./Pages/admin/Sales/Offers"));
 const Bundles = lazy(() => import("./Pages/admin/Sales/Bundles"));
 const Debts = lazy(() => import("./Pages/admin/Sales/Debts"));
 const WaitingList = lazy(() => import("./Pages/admin/Sales/WaitingList"));
+const Emails = lazy(() => import("./Pages/admin/Emails/Emails"));
 
 // Import Components
 import Message from "./components/client/Message/Message";
@@ -95,6 +96,7 @@ function App() {
             <Route path="bundles" element={<Bundles />} />
             <Route path="debts" element={<Debts />} />
             <Route path="waiting-list" element={<WaitingList />} />
+            <Route path="emails" element={<Emails />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
 

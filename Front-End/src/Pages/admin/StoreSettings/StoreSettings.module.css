@@ -301,3 +301,53 @@
     flex-wrap: wrap;
     gap: 10px;
 }
+
+/* Shipping card */
+.shippingOff {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.shippingOff p,
+.muted {
+    margin: 0;
+    color: var(--adm-muted);
+}
+
+.shippingGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    column-gap: 14px;
+}
+
+.subTitle {
+    margin: 8px 0;
+    font-size: 14px;
+}
+
+.cityRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.cityFee {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--adm-border);
+    border-radius: 8px;
+    background: var(--adm-bg);
+    color: var(--adm-text);
+    font: inherit;
+}
+
+.cityAdd {
+    margin: 10px 0;
+    max-width: 260px;
+}

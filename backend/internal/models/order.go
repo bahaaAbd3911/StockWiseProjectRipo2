@@ -82,7 +82,8 @@ type Order struct {
 	SubtotalAmount         decimal.Decimal `json:"subtotal_amount"` // items after offers, before the coupon
 	DiscountAmount         decimal.Decimal `json:"discount_amount"` // what the coupon took off
 	CouponCode             *string         `json:"coupon_code"`     // copy of the code used, if any
-	TotalAmount            decimal.Decimal `json:"total_amount"`    // subtotal - discount: what the customer pays
+	ShippingAmount         decimal.Decimal `json:"shipping_amount"` // delivery fee charged (copy of the store's rule at checkout)
+	TotalAmount            decimal.Decimal `json:"total_amount"`    // subtotal - discount + shipping: what the customer pays
 	Status                 string          `json:"status"`
 	PaymentMethod          string          `json:"payment_method"`
 	PaymentStatus          string          `json:"payment_status"`

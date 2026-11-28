@@ -141,6 +141,12 @@ func touchCart(ctx context.Context, q database.Querier, cartID int64) error {
 
 // Get returns the cart with live prices, line totals and availability.
 func (r *CartRepository) Get(ctx context.Context, userID int64) (models.Cart, error) {
+	return r.GetForCity(ctx, userID, "")
+}
+
+// GetForCity is the cart with shipping worked out for a delivery city (""
+// = the customer's default address, if any).
+func (r *CartRepository) GetForCity(ctx context.Context, userID int64, city string) (models.Cart, error) {
 	cartID, updated, err := ensureCart(ctx, r.db, userID)
 	if err != nil {
 		return models.Cart{}, err
@@ -204,6 +210,22 @@ func (r *CartRepository) Get(ctx context.Context, userID int64) (models.Cart, er
 		cart.Discount = discount
 		cart.Total = cart.Subtotal.Sub(discount)
 	}
+
+	// Shipping, with the same rule checkout uses.
+	if city == "" {
+		if city, err = defaultAddressCity(ctx, r.db, userID); err != nil {
+			return models.Cart{}, err
+		}
+	}
+	fee, rule, err := shippingFor(ctx, r.db, city, cart.Total)
+	if err != nil {
+		return models.Cart{}, err
+	}
+	cart.Shipping, cart.ShippingCity = fee, city
+	if rule != nil {
+		cart.FreeShippingOver = rule.FreeOver
+	}
+	cart.Total = cart.Total.Add(fee)
 	return cart, nil
 }
 

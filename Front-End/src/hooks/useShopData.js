@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as shopApi from "../api/shop";
 
-const EMPTY_CART_INFO = { bundles: [], subtotal: 0, discount: 0, total: 0, coupon: null };
+const EMPTY_CART_INFO = {
+  bundles: [],
+  subtotal: 0,
+  discount: 0,
+  shipping: 0,
+  shippingCity: "",
+  freeShippingOver: null,
+  total: 0,
+  coupon: null,
+};
 const EMPTY = { cart: [], cartInfo: EMPTY_CART_INFO, favorites: [], orders: [] };
 
 // cart = the product lines (what most components use); cartInfo = bundle lines,
@@ -13,10 +22,22 @@ const splitCart = ({ items, ...info }) => ({ cart: items, cartInfo: info });
 export function useShopData(isSign) {
   const [data, setData] = useState(EMPTY);
 
+  // The delivery city chosen at checkout: every later cart refresh estimates
+  // shipping for it ("" = the customer's default address).
+  const cityRef = useRef("");
+
   const refreshCart = useCallback(async () => {
-    const cart = splitCart(await shopApi.fetchCart());
+    const cart = splitCart(await shopApi.fetchCart(cityRef.current));
     setData((prev) => ({ ...prev, ...cart }));
   }, []);
+  const setShippingCity = useCallback(
+    (city) => {
+      if (cityRef.current === city) return Promise.resolve();
+      cityRef.current = city;
+      return refreshCart();
+    },
+    [refreshCart],
+  );
   const refreshFavorites = useCallback(async () => {
     const favorites = await shopApi.fetchFavorites();
     setData((prev) => ({ ...prev, favorites }));
@@ -33,5 +54,5 @@ export function useShopData(isSign) {
       .catch(() => {});
   }, [isSign]);
 
-  return { ...(isSign ? data : EMPTY), refreshCart, refreshFavorites, refreshOrders };
+  return { ...(isSign ? data : EMPTY), refreshCart, setShippingCity, refreshFavorites, refreshOrders };
 }

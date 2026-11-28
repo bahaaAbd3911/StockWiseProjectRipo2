@@ -88,3 +88,10 @@
     color: var(--adm-muted);
     font-size: 14px;
 }
+
+.charge {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 8px;
+    color: var(--adm-muted);
+}
