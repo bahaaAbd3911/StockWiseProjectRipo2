@@ -1,5 +1,5 @@
-# Continuous integration: every push to main, and every pull
-# request, is checked before it can break the live site.
+# Continuous integration: every push to main, every pull request, and once a
+# week on its own, the code is checked before it can break the live site.
 #
 #   backend   gofmt, go vet, all Go tests (unit + end-to-end on a throwaway
 #             PostgreSQL 18) under the race detector
@@ -19,6 +19,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Every Monday 05:00 UTC (08:00 in Amman): new vulnerability advisories and
+  # broken dependencies show up even in weeks without a push.
+  schedule:
+    - cron: "0 5 * * 1"
 
 permissions:
   contents: read

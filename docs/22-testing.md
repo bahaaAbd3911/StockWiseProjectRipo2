@@ -77,8 +77,10 @@ docker stop sw-race-db && docker network rm sw-race
 
 ## 22.4 Continuous integration (GitHub Actions)
 
-`.github/workflows/ci.yml` runs on every push to `main` and on
-every pull request. The result shows as a green tick or red cross next to
+`.github/workflows/ci.yml` runs on every push to `main`, on every pull
+request, and every Monday at 05:00 UTC (08:00 in Amman), so a newly
+published vulnerability shows up even in a week without a push. It can
+also be started by hand (Actions → CI → Run workflow). The result shows as a green tick or red cross next to
 the commit on GitHub.
 
 | Job | What it checks |
@@ -92,6 +94,27 @@ the commit on GitHub.
 customer finds it. `main` should only receive commits with a green tick.
 On GitHub you can make this required: Settings → Branches → a rule for
 `main` → "Require status checks to pass".
+
+### Dependabot (`.github/dependabot.yml`)
+
+Every Monday GitHub looks for newer versions of everything the project uses:
+
+- Go modules;
+- npm packages;
+- GitHub actions;
+- Docker base images: golang, distroless, node, caddy.
+
+For each update it opens a **pull request**, and CI runs on it:
+
+- **Green:** merge it on GitHub.
+- **Red:** the update breaks something. Leave it open and ask for a fix.
+
+Minor and patch updates come grouped, one pull request per area; major
+versions come one by one, because they are the ones that can break things.
+For security fixes as soon as they are published, turn on **Dependabot
+security updates** (GitHub → Settings → Code security). This is the only
+case where something other than you puts commits on `main`: by merging a
+reviewed pull request.
 
 ## 22.5 The latest results
 

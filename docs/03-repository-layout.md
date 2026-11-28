@@ -2,7 +2,8 @@
 
 ```
 Project/
-├── .github/workflows/ci.yml      GitHub Actions: tests, lint, build, scan on every push
+├── .github/workflows/ci.yml      GitHub Actions: tests, lint, build, scan on every push and weekly
+├── .github/dependabot.yml        weekly pull requests for dependency updates
 ├── docs/                         this documentation
 ├── package.json                  shortcuts run from the root: npm run dev / api / build / lint
 ├── Front-End/                    the React app (Vite)

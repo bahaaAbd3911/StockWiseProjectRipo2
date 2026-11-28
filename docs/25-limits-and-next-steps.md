@@ -22,6 +22,7 @@ accounts. The steps are in [21-deployment-and-operations.md](21-deployment-and-o
 |---|---|
 | Browser tests (e.g. Playwright) for the main flows | the API side of every screen is tested, the clicking is not; they would run in the same CI |
 | Make the CI check required for `main` | GitHub → Settings → Branches; then a red cross blocks merging |
+| Turn on Dependabot security updates | GitHub → Settings → Code security; security fixes then arrive as pull requests right away, not only on Mondays |
 
 ## When the platform grows
 
